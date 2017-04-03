@@ -1,0 +1,16 @@
+*~
+\#*
+*#
+*.o
+*.so
+*.bak
+*.files
+*.includes
+*.creator*
+/*.config
+*.save
+.build
+.project
+*.user
+CMakeFiles/
+*.kdev4
