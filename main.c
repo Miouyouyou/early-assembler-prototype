@@ -10,7 +10,7 @@
 
 uint8_t msg[] = "Hellow Meow !\n";
 uint32_t msg_size = sizeof(msg);
-#define MAX_ARGS 3
+
 struct instruction_parameters {
 	struct parameters params[MAX_ARGS];
 }
@@ -20,12 +20,6 @@ instruction_params[n_known_instructions] = {
 			{.type = arg_register},
 			{.type = arg_register},
 			{.type = arg_immediate, .restriction = 12}
-		},
-	},
-	[inst_ldr_immediate] = {
-		.params = {
-			{.type = arg_register},
-			{.type = arg_address}
 		},
 	},
 	[inst_mov_immediate] = {
@@ -66,14 +60,7 @@ instruction_params[n_known_instructions] = {
  * PUSH, POP
  */
 
-struct instruction_args_infos {
-	uint32_t value;
-};
 
-struct instruction_representation {
-	enum known_instructions id;
-	struct instruction_args_infos args[MAX_ARGS];
-};
 
 char * register_names[] = {
 	[r0]  = "r0",
@@ -132,19 +119,17 @@ struct instruction_to_string {
 }
 instructions_string_conversions[n_known_instructions] = {
 	[inst_add_immediate] = {two_regs_one_immediate, "add %s, %s, #%d\n"},
-	[inst_ldr_immediate] = {one_reg_one_immediate,  "ldr %s, #%d\n"},
 	[inst_mov_immediate] = {one_reg_one_immediate,  "mov %s, #%d\n"},
 	[inst_mov_register]  = {two_regs,               "mov %s, %s\n"},
+	[inst_movt_immediate] = {one_reg_one_immediate, "movt %s, #%d\n"},
+	[inst_movw_immediate] = {one_reg_one_immediate, "movw %s, #%d\n"},
 	[inst_mvn_immediate] = {one_reg_one_immediate,  "mvn %s, %d\n"},
 	[inst_sub_immediate] = {two_regs_one_immediate, "sub %s, %s, #%d\n"},
 	[inst_svc_immediate] = {one_immediate,          "svc #%d\n"}
 };
 
 
-struct instructions {
-	unsigned int n_instructions;
-	struct instruction_representation converted[];
-};
+
 
 size_t instructions_to_string
 (struct instruction_representation const * __restrict const instructions,
@@ -170,236 +155,64 @@ size_t instructions_to_string
 	return stored_chars;
 }
 
-void set_instruction
-(struct instruction_representation * __restrict const instruction,
- enum known_instructions id, uint32_t const val0, uint32_t const val1,
- uint32_t const val2)
-{
-	instruction->id = id;
-	instruction->args[0].value = val0;
-	instruction->args[1].value = val1;
-	instruction->args[2].value = val2;
-}
+#define N_TESTS_INST 6
+
+uint8_t test_data[1000] = {0};
+
+static struct data_symbol test_symbols[10] = {0};
+static struct data_symbols test_data_section = {
+	.data = test_data,
+	.symbols = test_symbols,
+	.stored = 0,
+	.base_address = 0x20094,
+	.global_size = 0,
+	.max_size    = 1000
+};
+
+static uint8_t test_data_string[] = "Meow world !\n";
+static uint8_t test_data_string_name[] = "meow";
 
 void test_instructions_to_string() {
-	struct instruction_representation instructions[5] = {0};
+	/*struct instruction_representation converted[N_TESTS_INST] = {0};
+	struct instructions insts = {
+		.n = 0,
+		.converted = converted
+	};
 	
 	printf("Got there !\n");
 	
-	set_instruction(instructions+0, inst_mov_immediate, r0, 1,      0);
-	set_instruction(instructions+1, inst_ldr_immediate, r1, 0x1000, 0);
-	set_instruction(instructions+2, inst_mov_immediate, r2, 10, 0);
-	set_instruction(instructions+3, inst_mov_immediate, r7, 4, 0);
-	set_instruction(instructions+4, inst_svc_immediate, 0,0,0);
+	add_instruction(&insts, inst_mov_immediate, r0, 1,      0);
+	add_instruction(&insts, inst_movw_immediate, r1, 0, 0);
+	add_instruction(&insts, inst_movt_immediate, r1, 0, 0);
+	add_instruction(&insts, inst_mov_immediate, r2, 10, 0);
+	add_instruction(&insts, inst_mov_immediate, r7, 4, 0);
+	add_instruction(&insts, inst_svc_immediate, 0,0,0);
+	
+	uint32_t data_index = add_data_symbol(
+		&test_data_section, test_data_string, sizeof(test_data_string),
+		test_data_string_name
+	);
+	
+	converted[1].args[1].type = arg_data_symbol_address_bottom16;
+	converted[1].args[1].value = data_index;
+	converted[2].args[1].type = arg_data_symbol_address_top16;
+	converted[2].args[1].value = data_index;
+	converted[3].args[1].type = arg_data_symbol_size;
+	converted[3].args[1].value = data_index;
 	
 	char string[200];
 	memset(string, 0, 200);
 	
-	instructions_to_string(instructions, 5, string, 200);
+	instructions_to_string(converted, N_TESTS_INST, string, 200);
 	printf("%s\n", string);
-}
-
-typedef int32_t immediate;
-
-static uint32_t to_positive(immediate value) {
-	return ~value + 1;
-}
-
-typedef unsigned int address;
-
-uint32_t op_add_immediate
-(enum arm_register dest, enum arm_register op1, immediate op2);
-uint32_t op_b_address(enum arm_conditions condition, address imm24);
-uint32_t op_bl_address(enum arm_conditions condition, address addr24);
-uint32_t op_blx_address(address addr24);
-uint32_t op_blx_register
-(enum arm_conditions condition, enum arm_register addr_reg);
-uint32_t op_mov_immediate(enum arm_register dest, immediate value);
-uint32_t op_mov_register(enum arm_register dest, enum arm_register src);
-uint32_t op_mvn_immediate(enum arm_register dest, immediate value);
-uint32_t op_ldr_immediate(enum arm_register dest, immediate pc_offset);
-uint32_t op_pop_immediate_list
-(enum arm_conditions condition, uint16_t reglist);
-uint32_t op_push_immediate_list
-(enum arm_conditions condition, uint16_t reglist);
-uint32_t op_sub_immediate
-(enum arm_register dest, enum arm_register op1, immediate op2);
-
-static inline enum arm_conditions clamp_condition
-(enum arm_conditions condition)
-{
-	return (condition & 0xf);
-}
-
-static inline enum arm_register clamp_standard_register
-(enum arm_register reg)
-{
-	return (reg & 0xf);
-}
-
-static inline uint32_t clamp_reglist(uint32_t reglist)
-{
-	return (reglist & 0xffff);
-}
-
-static uint32_t branch_instruction
-(enum arm_conditions condition, address addr24,
- uint32_t fixed_part_bits)
-{
-	uint32_t cond       = clamp_condition(condition) << 28;
-	uint32_t fixed_part = (fixed_part_bits) << 24;
-	uint32_t imm24      = addr24 & 0xffffff;
 	
-	return cond | fixed_part | imm24;
-}
-
-uint32_t op_b_address(enum arm_conditions condition, address addr24)
-{
-	return branch_instruction(condition, addr24, 0b1010);
-}
-
-uint32_t op_bl_address(enum arm_conditions condition, address addr24)
-{
-	return branch_instruction(condition, addr24, 0b1011);
-}
-
-uint32_t op_blx_address(address addr24)
-{
-	uint32_t fixed_part = 0b1111101 << 25;
-	uint32_t h          = addr24 & 1 << 24;
-	uint32_t imm24      = ((addr24 >> 1) & 0xffffff);
-
-	return fixed_part | h | imm24;
-}
-
-uint32_t op_blx_register
-(enum arm_conditions condition, enum arm_register addr_reg)
-{
-	uint32_t cond       = clamp_condition(condition) << 28;
-	uint32_t fixed_part = 0b000100101111111111110011 << 4;
-	uint32_t rm         = clamp_standard_register(addr_reg);
+	uint32_t machine_code[N_TESTS_INST] = {0};
 	
-	return cond | fixed_part | rm;
-}
-
-uint32_t op_mov_immediate(enum arm_register dest, immediate value)
-{
-	if (value >= 0) {
-		uint32_t const cond  = cond_al << 28;
-		uint32_t const fixed_part = 0b001110100000 << 16;
-		uint32_t const rd = dest << 12;
-		uint32_t const imm12 = (value & 0xfff); // imm12 = 12 bits max
-		return cond | fixed_part | rd | imm12;
+	assemble_code(&test_data_section, converted, N_TESTS_INST, machine_code);
+	for (unsigned int i = 0; i < N_TESTS_INST; i++) {
+		printf("%x\n", machine_code[i]);
 	}
-	else return op_mvn_immediate(dest, ~value);
-}
-
-uint32_t op_mvn_immediate(enum arm_register dest, immediate value)
-{
-	if (value >= 0) {
-		uint32_t const cond  = cond_al << 28;
-		uint32_t const fixed_part = 0b001111100000 << 16;
-		uint32_t const rd = dest << 12;
-		uint32_t const imm12 = (value & 0xfff); // imm12 = 12 bits max
-		return cond | fixed_part | rd | imm12;
-	}
-	else return op_mov_immediate(dest, ~value);
-}
-
-uint32_t op_mov_register(enum arm_register dest, enum arm_register src)
-{
-	uint32_t const cond = cond_al << 28;
-	uint32_t const fixed_part = 0b000110100000 << 16;
-	uint32_t const rd = dest << 12;
-	uint32_t const rm = src;
-	return cond | fixed_part | rd | rm;
-}
-
-uint32_t op_movw_immediate(enum arm_register dest, immediate value)
-{
-	uint32_t const cond = cond_al << 28;
-	uint32_t const fixed_part = 0b00110000 << 20;
-
-	uint32_t const imm4 = (value & 0xf000) << 16;
-	uint32_t const rd   = clamp_standard_register(dest) << 12;
-	uint32_t const imm12 = value & 0xfff;
-	
-	return cond | fixed_part | imm4 | rd | imm12;
-}
-
-uint32_t op_movt_immediate(enum arm_register dest, immediate value)
-{
-	uint32_t const cond = cond_al << 28;
-	uint32_t const fixed_part = 0b00110100 << 20;
-
-	uint32_t const imm4 = (value & 0xf000) << 16;
-	uint32_t const rd   = clamp_standard_register(dest) << 12;
-	uint32_t const imm12 = value & 0xfff;
-	
-	return cond | fixed_part | imm4 | rd | imm12;
-}
-
-uint32_t op_ldr_register(enum arm_register dest, immediate pc_offset)
-{
-	uint32_t const cond = cond_al << 28;
-	uint32_t const first_fixed_part = 0b0101 << 24;
-	uint32_t const positive = (pc_offset > 0) << 23;
-	uint32_t const second_fixed_part = 0b0011111 << 16;
-	uint32_t const rt = dest << 12;
-	
-	uint32_t positive_offset = pc_offset;
-	if (!positive) positive_offset = to_positive(pc_offset);
-	
-	uint32_t const imm12 = positive_offset & 0xfff; // imm12 = 12 bits max
-	return cond | first_fixed_part | positive | second_fixed_part | rt | imm12;
-}
-
-uint32_t op_sub_immediate
-(enum arm_register dest, enum arm_register op1, immediate op2)
-{
-	if (op2 >= 0) {
-		uint32_t const cond = cond_al << 28;
-		uint32_t const fixed_part = 0b00100100 << 20;
-		uint32_t const rn = op1 << 16;
-		uint32_t const rd = dest << 12;
-		uint32_t const imm12 = op2 & 0xfff;
-		return cond | fixed_part | rn | rd | imm12;
-	}
-	else return op_add_immediate(dest, op1, to_positive(op2));
-}
-
-uint32_t op_add_immediate
-(enum arm_register dest, enum arm_register op1, immediate op2)
-{
-	if (op2 >= 0) {
-		uint32_t const cond = cond_al << 28;
-		uint32_t const fixed_part = 0b00101000 << 20;
-		uint32_t const rn = op1 << 16;
-		uint32_t const rd = dest << 12;
-		uint32_t const imm12 = op2 & 0xfff;
-		return cond | fixed_part | rn | rd | imm12;
-	}
-	else return op_sub_immediate(dest, op1, to_positive(op2));
-}
-
-uint32_t op_push_immediate_list
-(enum arm_conditions condition, uint16_t reglist)
-{
-	uint32_t const cond          = clamp_condition(condition) << 28;
-	uint32_t const fixed_part    = 0b100100101101 << 16;
-	uint32_t const register_list = clamp_reglist(reglist);
-	
-	return cond | fixed_part | register_list;
-}
-
-uint32_t op_pop_immediate_list
-(enum arm_conditions condition, uint16_t reglist)
-{
-	uint32_t const cond = clamp_condition(condition) << 28;
-	uint32_t const fixed_part = 0b100010111101 << 16;
-	uint32_t const register_list = clamp_reglist(reglist);
-	
-	return cond | fixed_part | register_list;
+	printf("%d\n", instructions_size(&insts));*/
 }
 
 static address get_global_data_address

@@ -1,5 +1,6 @@
 #include <stdint.h>
 #include <elf.h>
+#include <armv7-arm.h>
 
 #include <string.h>
 
@@ -103,20 +104,22 @@ static uint8_t scratch_space[10000];
 #include <unistd.h>
 #include <stdio.h>
 
-uint8_t data_strings[]          = { "Hellow Meow !\n" };
-uint8_t section_names[] = { "\0.text\0.data\0.shstrtab\0" };
-
-uint32_t instructions[] = {
-	0xe3a00001,
-	0xe3001098,
-	0xe3401002,
-	0xe3a0200e,
-	0xe3a07004,
-	0xef000000,
-	0xe3a00000,
-	0xe3a07001,
-	0xef000000
+#define N_TEST_INSTS 10
+uint32_t test_machine_code[50] = {0};
+uint8_t test_data[1000] = {0};
+static struct data_symbol test_symbols[10] = {0};
+static struct data_symbols test_data_section = {
+	.data = test_data,
+	.symbols = test_symbols,
+	.stored = 0,
+	.base_address = 0x20000,
+	.global_size = 0,
+	.max_size    = 1000
 };
+static uint8_t test_data_string[] = "My hamster is rich and can do kung-fu !\n";
+static uint8_t test_data_string_name[] = "meow";
+
+uint8_t section_names[] = { "\0.text\0.data\0.shstrtab\0" };
 
 uint32_t write_data
 (uint8_t * __restrict const storage,
@@ -140,6 +143,29 @@ uint32_t add_binary_data
 {
 	glbl_offsets[element] = storage_offset;
 	return write_data(scratch_space, storage_offset, data, data_size);
+}
+
+uint32_t prepare_machine_code_section
+(enum program_elements element,
+ uint32_t storage_offset,
+ struct instructions const * __restrict const frame_instructions)
+{
+	glbl_offsets[element] = storage_offset;
+	uint32_t bytes_written = instructions_size(frame_instructions);
+	memset(scratch_space+storage_offset, 0, bytes_written);
+	return storage_offset + bytes_written;
+}
+
+uint32_t write_data_section
+(enum program_elements element,
+ uint32_t storage_offset,
+ struct data_symbols const * __restrict const data_section)
+{
+	glbl_offsets[element] = storage_offset;
+	uint32_t bytes_written = write_data_section_content(
+		data_section, scratch_space+storage_offset
+	);
+	return storage_offset+bytes_written;
 }
 
 static void setup_text_sections
@@ -184,11 +210,13 @@ static void setup_data_sections
 (uint8_t * __restrict const elf_binary_data,
  offset const * __restrict const offsets,
  uint32_t const data_base_addr,
- uint32_t const data_size)
+ struct data_symbols * __restrict const data_infos)
 {
 	offset const physical_data_offset = offsets[element_data_data];
 	offset const virtual_data_offset =
 		data_base_addr+physical_data_offset;
+	uint32_t data_size = data_infos->global_size;
+	data_infos->base_address = virtual_data_offset;
 	
 	Elf32_Phdr * dh =
 		(Elf32_Phdr *) (elf_binary_data+offsets[element_data_phdr]);
@@ -205,19 +233,24 @@ static void setup_data_sections
 	dsh->sh_size = data_size;
 }
 
+
+
 void build_program
-(uint32_t const * __restrict const machine_code,
- uint32_t const machine_code_size,
- uint8_t const * __restrict const data,
- uint32_t const data_size)
+(struct instructions const * __restrict const insts,
+ struct data_symbols * __restrict const data_infos)
 {
+
 	memset(&empty_section, 0, sizeof(Elf32_Shdr));
 	uint32_t bytes_written = 0;
 	bytes_written = add_binary_data(element_elf_header, bytes_written, &program_header, sizeof(program_header));
 	bytes_written = add_binary_data(element_text_phdr, bytes_written, &text_header, sizeof(text_header));
 	bytes_written = add_binary_data(element_data_phdr, bytes_written, &data_header, sizeof(data_header));
-	bytes_written = add_binary_data(element_text_data, bytes_written, machine_code, machine_code_size);
-	bytes_written = add_binary_data(element_data_data, bytes_written, data, data_size);
+	bytes_written = prepare_machine_code_section(
+		element_text_data, bytes_written, insts
+	);
+	bytes_written = write_data_section(
+		element_data_data, bytes_written, data_infos
+	);
 	bytes_written = add_binary_data(element_empty_shdr, bytes_written, &empty_section, sizeof(empty_section));
 	bytes_written = add_binary_data(element_text_shdr, bytes_written, &text_section, sizeof(text_section));
 	bytes_written = add_binary_data(element_data_shdr, bytes_written, &data_section, sizeof(data_section));
@@ -230,16 +263,20 @@ void build_program
 	
 	printf("th offset : %d\n", glbl_offsets[element_text_phdr]);
 	setup_text_sections(
-		scratch_space, glbl_offsets, CODE_BASE_ADDR, machine_code_size
+		scratch_space, glbl_offsets, CODE_BASE_ADDR, instructions_size(insts)
 	);
 	setup_data_sections(
-		scratch_space, glbl_offsets, DATA_BASE_ADDR, data_size
+		scratch_space, glbl_offsets, DATA_BASE_ADDR, data_infos
 	);
-
 	
 	Elf32_Shdr * shstrtab_shdr = (Elf32_Shdr *) (scratch_space+glbl_offsets[element_shstrtab_shdr]);
 	shstrtab_shdr->sh_size    = sizeof(section_names);
 	shstrtab_shdr->sh_offset  = glbl_offsets[element_shstrtab_data];
+	
+	assemble_code(
+		data_infos, insts,
+		(uint32_t *) (scratch_space+glbl_offsets[element_text_data])
+	);
 	
 	int fd = open("executable", O_WRONLY|O_CREAT|O_TRUNC, 00755);
 	if (fd != -1) {
@@ -248,8 +285,41 @@ void build_program
 	}
 }
 
+void prepare_test_code_and_data
+(struct instructions * __restrict const insts,
+ struct data_symbols * __restrict const data_section)
+{
+	struct instruction_representation * __restrict const converted =
+		insts->converted;
+	
+	uint32_t data_index = add_data_symbol(
+		data_section, test_data_string, sizeof(test_data_string),
+		test_data_string_name
+	);
+	
+	add_instruction(insts, inst_mov_immediate, r0,  1, 0);
+	add_instruction(insts, inst_movw_immediate, r1, data_index, 0);
+	add_instruction(insts, inst_movt_immediate, r1, data_index, 0);
+	add_instruction(insts, inst_mov_immediate, r2,  data_index, 0);
+	add_instruction(insts, inst_mov_immediate, r7,  4, 0);
+	add_instruction(insts, inst_svc_immediate, 0,   0,0);
+	add_instruction(insts, inst_mov_immediate, r0, 0, 0);
+	add_instruction(insts, inst_mov_immediate, r7, 1, 0);
+	add_instruction(insts, inst_svc_immediate, 0, 0, 0);
+	
+	converted[1].args[1].type = arg_data_symbol_address_bottom16;
+	converted[2].args[1].type = arg_data_symbol_address_top16;
+	converted[3].args[1].type = arg_data_symbol_size;
+}
+
 int main() {
-	build_program(instructions, INSTRUCTION_SIZE, data_strings, DATA_SIZE);
+	struct instruction_representation converted[N_TEST_INSTS] = {0};
+	struct instructions frame_instructions = {
+		.n = 0,
+		.converted = converted
+	};
+	prepare_test_code_and_data(&frame_instructions, &test_data_section);
+	build_program(&frame_instructions, &test_data_section);
 	for (enum program_elements element = element_elf_header;
 	     element < n_elements; element++) {
 		printf("%x\n", glbl_offsets[element]);
