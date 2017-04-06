@@ -2,6 +2,7 @@
 #define MYY_ARMV7_ARM_H 1
 
 #include <stdint.h>
+#include <data_section.h>
 
 enum arm_register {
 	r0, r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11, r12, r13, r14, r15,
@@ -42,25 +43,6 @@ enum parameter_type {
 struct parameters {
 	enum parameter_type type;
 	uint32_t restriction;
-};
-
-struct data_symbol {
-	uint32_t id;
-	uint32_t size;
-	uint32_t offset;
-	uint32_t align;
-	uint8_t * name;
-};
-
-struct data_symbols {
-	uint8_t * data;
-	struct data_symbol * symbols;
-	uint32_t stored;
-	uint32_t base_address;
-	uint32_t global_size;
-	uint32_t max_size;
-	uint32_t max_symbols;
-	uint32_t next_id;
 };
 
 #define MAX_ARGS 3
@@ -117,39 +99,5 @@ uint32_t assemble_code
  struct instructions const * __restrict const instructions,
  uint32_t * result_code);
 
-uint32_t add_data_symbol
-(struct data_symbols * __restrict const data_infos,
- uint8_t const * __restrict const data,
- unsigned int const size,
- unsigned int const alignment,
- uint8_t * __restrict name);
-
-struct uint32_result {
-	unsigned int found;
-	uint32_t value;
-};
-
-struct symbol_found {
-	unsigned int found;
-	struct data_symbol * address;
-};
-
-struct symbol_found get_data_symbol_infos
-(struct data_symbols const * __restrict const data_infos,
- uint32_t id);
-
-void exchange_data_symbols
-(struct data_symbols * __restrict const data_section,
- unsigned int const id1, unsigned int const id2);
-
-uint32_t write_data_section_content
-(struct data_symbols const * __restrict const symbols,
- uint8_t * __restrict const dest);
-
-void delete_data_symbol
-(struct data_symbols * __restrict const data_section,
- uint32_t id);
-
-uint32_t round_to(uint32_t value, uint32_t multiple);
 
 #endif

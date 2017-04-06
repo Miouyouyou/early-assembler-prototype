@@ -1,6 +1,7 @@
 #include <stdint.h>
 #include <elf.h>
 #include <armv7-arm.h>
+#include <data_section.h>
 
 #include <string.h>
 
@@ -109,12 +110,9 @@ uint32_t test_machine_code[50] = {0};
 uint8_t test_data[1000] = {0};
 static struct data_symbol test_symbols[10] = {0};
 static struct data_symbols test_data_section = {
-	.data = test_data,
 	.symbols = test_symbols,
 	.stored = 0,
 	.base_address = 0x20000,
-	.global_size = 0,
-	.max_size    = 1000
 };
 static uint8_t test_data_string[] = "My hamster is rich and can do kung-fu !\n";
 static uint8_t test_data_string_name[] = "meow";
@@ -139,8 +137,8 @@ void prepare_test_code_and_data
 		insts->converted;
 	
 	uint32_t data_index = add_data_symbol(
-		data_section, test_data_string, sizeof(test_data_string),
-		4, test_data_string_name
+		data_section, 4, sizeof(test_data_string),
+		test_data_string_name, test_data_string
 	);
 	
 	add_instruction(insts, inst_mov_immediate, r0,  1, 0);
@@ -242,7 +240,7 @@ static void setup_data_sections
 	offset const physical_data_offset = offsets[element_data_data];
 	offset const virtual_data_offset =
 		data_base_addr+physical_data_offset;
-	uint32_t data_size = data_infos->global_size;
+	uint32_t data_size = data_section_size(data_infos);
 	data_infos->base_address = virtual_data_offset;
 	
 	Elf32_Phdr * dh =

@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 2.8)
 # User defined
 project(OpenGLInterfaces)
 
-set (CommonSources armv7-arm.c)
+set (CommonSources armv7-arm.c data_section.c)
 
 include_directories(.)
 

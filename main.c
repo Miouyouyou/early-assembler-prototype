@@ -4,6 +4,7 @@
 #include <string.h> // memset
 
 #include <armv7-arm.h>
+#include <data_section.h>
 // Stub of a dumb mnemonics to machine code library
 
 
@@ -161,12 +162,9 @@ uint8_t test_data[1000] = {0};
 
 static struct data_symbol test_symbols[10] = {0};
 static struct data_symbols test_data_section = {
-	.data = test_data,
 	.symbols = test_symbols,
 	.stored = 0,
 	.base_address = 0x20094,
-	.global_size = 0,
-	.max_size    = 1000
 };
 
 static uint8_t test_data_string[] = "Meow world !\n";
