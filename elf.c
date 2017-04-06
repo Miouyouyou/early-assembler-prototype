@@ -131,6 +131,33 @@ uint32_t write_data
 	return storage_offset + data_size;
 }
 
+void prepare_test_code_and_data
+(struct instructions * __restrict const insts,
+ struct data_symbols * __restrict const data_section)
+{
+	struct instruction_representation * __restrict const converted =
+		insts->converted;
+	
+	uint32_t data_index = add_data_symbol(
+		data_section, test_data_string, sizeof(test_data_string),
+		4, test_data_string_name
+	);
+	
+	add_instruction(insts, inst_mov_immediate, r0,  1, 0);
+	add_instruction(insts, inst_movw_immediate, r1, data_index, 0);
+	add_instruction(insts, inst_movt_immediate, r1, data_index, 0);
+	add_instruction(insts, inst_mov_immediate, r2,  data_index, 0);
+	add_instruction(insts, inst_mov_immediate, r7,  4, 0);
+	add_instruction(insts, inst_svc_immediate, 0,   0,0);
+	add_instruction(insts, inst_mov_immediate, r0, 0, 0);
+	add_instruction(insts, inst_mov_immediate, r7, 1, 0);
+	add_instruction(insts, inst_svc_immediate, 0, 0, 0);
+	
+	converted[1].args[1].type = arg_data_symbol_address_bottom16;
+	converted[2].args[1].type = arg_data_symbol_address_top16;
+	converted[3].args[1].type = arg_data_symbol_size;
+}
+
 typedef uint32_t offset;
 
 offset glbl_offsets[n_elements] = {0};
@@ -233,8 +260,6 @@ static void setup_data_sections
 	dsh->sh_size = data_size;
 }
 
-
-
 void build_program
 (struct instructions const * __restrict const insts,
  struct data_symbols * __restrict const data_infos)
@@ -242,26 +267,49 @@ void build_program
 
 	memset(&empty_section, 0, sizeof(Elf32_Shdr));
 	uint32_t bytes_written = 0;
-	bytes_written = add_binary_data(element_elf_header, bytes_written, &program_header, sizeof(program_header));
-	bytes_written = add_binary_data(element_text_phdr, bytes_written, &text_header, sizeof(text_header));
-	bytes_written = add_binary_data(element_data_phdr, bytes_written, &data_header, sizeof(data_header));
+	bytes_written = add_binary_data(
+		element_elf_header, bytes_written, &program_header,
+		sizeof(program_header)
+	);
+	bytes_written = add_binary_data(
+		element_text_phdr, bytes_written,
+		&text_header, sizeof(text_header)
+	);
+	bytes_written = add_binary_data(
+		element_data_phdr, bytes_written,
+		&data_header, sizeof(data_header)
+	);
 	bytes_written = prepare_machine_code_section(
 		element_text_data, bytes_written, insts
 	);
 	bytes_written = write_data_section(
 		element_data_data, bytes_written, data_infos
 	);
-	bytes_written = add_binary_data(element_empty_shdr, bytes_written, &empty_section, sizeof(empty_section));
-	bytes_written = add_binary_data(element_text_shdr, bytes_written, &text_section, sizeof(text_section));
-	bytes_written = add_binary_data(element_data_shdr, bytes_written, &data_section, sizeof(data_section));
-	bytes_written = add_binary_data(element_shstrtab_shdr, bytes_written, &shstrtab_section, sizeof(shstrtab_section));
-	bytes_written = add_binary_data(element_shstrtab_data, bytes_written, &section_names, sizeof(section_names));
+	bytes_written = add_binary_data(
+		element_empty_shdr, bytes_written,
+		&empty_section, sizeof(empty_section)
+	);
+	bytes_written = add_binary_data(
+		element_text_shdr, bytes_written,
+		&text_section, sizeof(text_section)
+	);
+	bytes_written = add_binary_data(
+		element_data_shdr, bytes_written,
+		&data_section, sizeof(data_section)
+	);
+	bytes_written = add_binary_data(
+		element_shstrtab_shdr, bytes_written,
+		&shstrtab_section, sizeof(shstrtab_section)
+	);
+	bytes_written = add_binary_data(
+		element_shstrtab_data, bytes_written,
+		&section_names, sizeof(section_names)
+	);
 	
 	Elf32_Ehdr * header = (Elf32_Ehdr *) scratch_space;
 	header->e_shoff = glbl_offsets[element_empty_shdr];
 	header->e_entry = CODE_BASE_ADDR+glbl_offsets[element_text_data];
 	
-	printf("th offset : %d\n", glbl_offsets[element_text_phdr]);
 	setup_text_sections(
 		scratch_space, glbl_offsets, CODE_BASE_ADDR, instructions_size(insts)
 	);
@@ -283,33 +331,6 @@ void build_program
 		write(fd, scratch_space, bytes_written);
 		close(fd);
 	}
-}
-
-void prepare_test_code_and_data
-(struct instructions * __restrict const insts,
- struct data_symbols * __restrict const data_section)
-{
-	struct instruction_representation * __restrict const converted =
-		insts->converted;
-	
-	uint32_t data_index = add_data_symbol(
-		data_section, test_data_string, sizeof(test_data_string),
-		test_data_string_name
-	);
-	
-	add_instruction(insts, inst_mov_immediate, r0,  1, 0);
-	add_instruction(insts, inst_movw_immediate, r1, data_index, 0);
-	add_instruction(insts, inst_movt_immediate, r1, data_index, 0);
-	add_instruction(insts, inst_mov_immediate, r2,  data_index, 0);
-	add_instruction(insts, inst_mov_immediate, r7,  4, 0);
-	add_instruction(insts, inst_svc_immediate, 0,   0,0);
-	add_instruction(insts, inst_mov_immediate, r0, 0, 0);
-	add_instruction(insts, inst_mov_immediate, r7, 1, 0);
-	add_instruction(insts, inst_svc_immediate, 0, 0, 0);
-	
-	converted[1].args[1].type = arg_data_symbol_address_bottom16;
-	converted[2].args[1].type = arg_data_symbol_address_top16;
-	converted[3].args[1].type = arg_data_symbol_size;
 }
 
 int main() {
