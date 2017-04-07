@@ -252,7 +252,7 @@ struct args_values get_values
 					uint32_t address = 
 						text_section_frame_address(text_section, set_value);
 					// We currently only support ARM mode.
-					values[a] = address - pc - 4;
+					values[a] = address - pc - 8;
 				}
 				break;
 		}
@@ -434,9 +434,9 @@ void instruction_arg
 	instruction->args[index].value = value;
 }
 
-unsigned int frame_gen_machine_code
-(struct armv7_text_frame * __restrict const frame,
- struct armv7_text_section * __restrict const section,
+unsigned int armv7_frame_gen_machine_code
+(struct armv7_text_frame const * __restrict const frame,
+ struct armv7_text_section const * __restrict const section,
  struct data_section const * __restrict const data_infos,
  uint32_t * __restrict const result_code)
 {
@@ -513,6 +513,7 @@ struct armv7_text_section * generate_armv7_text_section()
 		.id = 0,
 		.n_frames_refs = 0,
 		.max_frames_refs = n_frames_refs_default,
+		.base_address = 0,
 		.frames_refs = frames_refs
 	};
 	
@@ -552,4 +553,59 @@ unsigned int armv7_text_section_add_frame
 	
 not_enough_memory_for_new_frame_reference:
 	return added;
+}
+
+unsigned int armv7_frame_size
+(struct armv7_text_frame const * __restrict const frame)
+{
+	return frame->metadata.stored_instructions * sizeof(uint32_t);
+}
+
+unsigned int armv7_text_section_size
+(struct armv7_text_section const * __restrict const text_section)
+{
+	unsigned int size = 0;
+	
+	for (unsigned int f = 0; f < text_section->n_frames_refs; f++)
+		size += armv7_frame_size(text_section->frames_refs[f]);
+	
+	return size;
+}
+
+void armv7_text_section_rebase_at
+(struct armv7_text_section * __restrict const text_section,
+ uint32_t const base)
+{	
+	text_section->base_address = base;
+
+	unsigned int addr = base;
+	for (unsigned int f = 0; f < text_section->n_frames_refs; f++) {
+		struct armv7_text_frame * __restrict const current_frame =
+			text_section->frames_refs[f];
+		armv7_frame_set_address(current_frame, addr);
+		addr += armv7_frame_size(current_frame);
+	}
+}
+
+#include <stdio.h>
+void armv7_text_section_write_at
+(struct armv7_text_section const * __restrict const text_section,
+ struct data_section const * __restrict const data_section,
+ uint8_t * __restrict const output)
+{
+	unsigned int const base_address = text_section->base_address;
+	unsigned int output_cursor = 0;
+	
+	for (unsigned int f = 0; f < text_section->n_frames_refs; f++) {
+		struct armv7_text_frame * __restrict const current_frame =
+			text_section->frames_refs[f];
+		uint32_t const frame_address = current_frame->metadata.base_address;
+		fprintf(stderr, "address : %x\n", frame_address);
+		output_cursor = frame_address - base_address;
+		armv7_frame_gen_machine_code(
+			current_frame, text_section,
+			data_section, (uint32_t *) (output+output_cursor)
+		);
+	}
+	
 }

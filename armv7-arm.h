@@ -82,6 +82,7 @@ struct armv7_text_section {
 	uint32_t id;
 	uint32_t n_frames_refs;
 	uint32_t max_frames_refs;
+	uint32_t base_address;
 	struct armv7_text_frame ** frames_refs;
 };
 
@@ -140,9 +141,9 @@ void instruction_arg
  enum argument_type argument_type,
  uint32_t const value);
 
-unsigned int frame_gen_machine_code
-(struct armv7_text_frame * __restrict const frame,
- struct armv7_text_section * __restrict const section,
+unsigned int armv7_frame_gen_machine_code
+(struct armv7_text_frame const * __restrict const frame,
+ struct armv7_text_section const * __restrict const section,
  struct data_section const * __restrict const data_infos,
  uint32_t * __restrict const result_code);
 
@@ -157,8 +158,23 @@ void armv7_frame_set_address
 (struct armv7_text_frame * __restrict const frame,
  uint32_t const address);
 
+unsigned int armv7_frame_size
+(struct armv7_text_frame const * __restrict const frame);
+
+unsigned int armv7_text_section_size
+(struct armv7_text_section const * __restrict const text_section);
+
+void armv7_text_section_rebase_at
+(struct armv7_text_section * __restrict const text_section,
+ uint32_t const addr);
+
 uint32_t text_section_frame_address
 (struct armv7_text_section const * __restrict const text_section,
  unsigned int const frame_id);
+
+void armv7_text_section_write_at
+(struct armv7_text_section const * __restrict const text_section,
+ struct data_section const * __restrict const data_section,
+ uint8_t * __restrict const output);
 
 #endif

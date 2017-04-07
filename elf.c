@@ -5,6 +5,8 @@
 
 #include <string.h>
 
+#include <assert.h>
+
 #define INSTRUCTION_SIZE 9*4
 #define DATA_SIZE 16
 
@@ -69,7 +71,7 @@ Elf32_Phdr data_header = {
 };
 
 Elf32_Shdr empty_section = {0};
-Elf32_Shdr text_section = {
+Elf32_Shdr text_shdr = {
 	.sh_name  = 1,
 	.sh_type  = SHT_PROGBITS,
 	.sh_flags = SHF_ALLOC | SHF_EXECINSTR,
@@ -80,7 +82,7 @@ Elf32_Shdr text_section = {
 	.sh_addralign = 4,
 	.sh_entsize = 0
 };
-Elf32_Shdr data_section = {
+Elf32_Shdr data_shdr = {
 	.sh_name      = 7,
 	.sh_type      = SHT_PROGBITS,
 	.sh_flags     = SHF_ALLOC | SHF_WRITE,
@@ -109,14 +111,7 @@ static uint8_t scratch_space[10000];
 uint32_t test_machine_code[50] = {0};
 uint8_t test_data[1000] = {0};
 static struct data_symbol test_symbols[10] = {0};
-static struct data_section test_data_section = {
-	.symbols = test_symbols,
-	.stored = 0,
-	.base_address = 0x20000,
-	.max_symbols_before_realloc = 10
-};
-static uint8_t test_data_string[] = "My hamster is rich and can do kung-fu !\n";
-static uint8_t test_data_string_name[] = "meow";
+
 
 uint8_t section_names[] = { "\0.text\0.data\0.shstrtab\0" };
 
@@ -130,31 +125,139 @@ uint32_t write_data
 	return storage_offset + data_size;
 }
 
-void prepare_test_code_and_data
-(struct instructions * __restrict const insts,
- struct data_section * __restrict const data_section)
+// Checking if ID and Indices are clearly separated
+static uint32_t id = 10;
+static uint32_t unique_id() {
+	uint32_t returned_id = id;
+	id += 10;
+	return returned_id;
+}
+
+static void add_inst
+(struct armv7_text_frame * __restrict const frame,
+ enum known_instructions mnemonic_id,
+ enum argument_type arg_type1,
+ int32_t arg1,
+ enum argument_type arg_type2,
+ int32_t arg2,
+ enum argument_type arg_type3,
+ int32_t arg3)
 {
-	struct instruction_representation * __restrict const converted =
-		insts->converted;
+	struct armv7_add_instruction_status status =
+		frame_add_instruction(frame);
+	assert(status.added);
+	struct instruction_representation * const inst = status.address;
 	
-	uint32_t data_index = data_section_add(
+	instruction_mnemonic_id(inst, mnemonic_id);
+	instruction_arg(inst, 0, arg_type1, arg1);
+	instruction_arg(inst, 1, arg_type2, arg2);
+	instruction_arg(inst, 2, arg_type3, arg3);
+}
+
+uint8_t test_data_string[] =
+	"My hamster is rich and can do kung-fu !\n";
+uint8_t test_data_string_name[] = "meow";
+void prepare_test_code_and_data
+(struct data_section * __restrict const data_section,
+ struct armv7_text_section * __restrict const text_section)
+{
+	
+	uint32_t hamster_id = data_section_add(
 		data_section, 4, sizeof(test_data_string),
 		test_data_string_name, test_data_string
 	).id;
 	
-	add_instruction(insts, inst_mov_immediate, r0,  1, 0);
-	add_instruction(insts, inst_movw_immediate, r1, data_index, 0);
-	add_instruction(insts, inst_movt_immediate, r1, data_index, 0);
-	add_instruction(insts, inst_mov_immediate, r2,  data_index, 0);
-	add_instruction(insts, inst_mov_immediate, r7,  4, 0);
-	add_instruction(insts, inst_svc_immediate, 0,   0,0);
-	add_instruction(insts, inst_mov_immediate, r0, 0, 0);
-	add_instruction(insts, inst_mov_immediate, r7, 1, 0);
-	add_instruction(insts, inst_svc_immediate, 0, 0, 0);
+	struct armv7_text_frame * const main_frame =
+		generate_armv7_text_frame(unique_id);
+	struct armv7_text_frame * const write_frame =
+		generate_armv7_text_frame(unique_id);
+	struct armv7_text_frame * const exit_frame =
+		generate_armv7_text_frame(unique_id);
 	
-	converted[1].args[1].type = arg_data_symbol_address_bottom16;
-	converted[2].args[1].type = arg_data_symbol_address_top16;
-	converted[3].args[1].type = arg_data_symbol_size;
+	add_inst(
+		main_frame,
+		inst_bl_address,
+		arg_condition, cond_al,
+		arg_frame_address_pc_relative, write_frame->metadata.id,
+		arg_invalid, 0
+	);
+	
+	add_inst(
+		main_frame,
+		inst_b_address,
+		arg_condition, cond_al,
+		arg_frame_address_pc_relative, exit_frame->metadata.id,
+		arg_invalid, 0
+	);
+	
+	add_inst(
+		write_frame,
+		inst_mov_immediate, arg_register, r0, arg_immediate, 0, 0, 0
+	);
+	
+	add_inst(
+		write_frame,
+		inst_mov_immediate,
+		arg_register, r1,
+		arg_data_symbol_address_bottom16, hamster_id,
+		0, 0
+	);
+	
+	add_inst(
+		write_frame,
+		inst_movt_immediate,
+		arg_register, r1,
+		arg_data_symbol_address_top16, hamster_id,
+		0, 0
+	);
+	
+	add_inst(
+		write_frame,
+		inst_mov_immediate,
+		arg_register, r2,
+		arg_data_symbol_size, hamster_id,
+		0, 0
+	);
+	
+	add_inst(
+		write_frame,
+		inst_mov_immediate,
+		arg_register, r7,
+		arg_immediate, 4,
+		0, 0
+	);
+	
+	add_inst(write_frame, inst_svc_immediate, 0, 0, 0, 0, 0, 0);
+
+	add_inst(
+		write_frame,
+		inst_bx_register,
+		arg_condition, cond_al,
+		arg_register, reg_lr,
+		0, 0
+	);
+	
+	add_inst(
+		exit_frame,
+		inst_mov_immediate, arg_register, r0, arg_immediate, 0, 0, 0);
+	
+	add_inst(
+		exit_frame,
+		inst_mov_immediate,
+		arg_register, r7,
+		arg_immediate, 1,
+		0, 0
+	);
+	
+	add_inst(
+		exit_frame,
+		inst_svc_immediate, 0, 0, 0, 0, 0, 0
+	);
+	
+	armv7_text_section_add_frame(text_section, main_frame);
+	armv7_text_section_add_frame(text_section, write_frame);
+	armv7_text_section_add_frame(text_section, exit_frame);
+	
 }
 
 typedef uint32_t offset;
@@ -174,10 +277,10 @@ uint32_t add_binary_data
 uint32_t prepare_machine_code_section
 (enum program_elements element,
  uint32_t storage_offset,
- struct instructions const * __restrict const frame_instructions)
+ struct armv7_text_section const * __restrict const text_section)
 {
 	glbl_offsets[element] = storage_offset;
-	uint32_t bytes_written = instructions_size(frame_instructions);
+	uint32_t bytes_written = armv7_text_section_size(text_section);
 	memset(scratch_space+storage_offset, 0, bytes_written);
 	return storage_offset + bytes_written;
 }
@@ -198,7 +301,7 @@ static void setup_text_sections
 (uint8_t * __restrict const elf_binary_data,
  offset const * __restrict const offsets,
  uint32_t const text_base_addr,
- uint32_t const text_size)
+ struct armv7_text_section * __restrict const text_section)
 {
 
 	/* It seems conventional that the size defined in the Text Program 
@@ -213,6 +316,7 @@ static void setup_text_sections
 	 * I have no idea if ignoring this convention could break the program
 	 * execution, so I'll follow such convention for now.
 	 */
+	unsigned int text_size = armv7_text_section_size(text_section);
 	offset const physical_text_offset = offsets[element_text_data];
 	offset const virtual_text_offset  =
 		text_base_addr + physical_text_offset;
@@ -230,6 +334,8 @@ static void setup_text_sections
 	text_shdr->sh_addr = virtual_text_offset;
 	text_shdr->sh_offset = physical_text_offset;
 	text_shdr->sh_size   = text_size;
+	
+	armv7_text_section_rebase_at(text_section, virtual_text_offset);
 }
 
 static void setup_data_sections
@@ -260,8 +366,8 @@ static void setup_data_sections
 }
 
 void build_program
-(struct instructions const * __restrict const insts,
- struct data_section * __restrict const data_infos)
+(struct data_section * __restrict const data_section,
+ struct armv7_text_section * __restrict const text_section)
 {
 
 	memset(&empty_section, 0, sizeof(Elf32_Shdr));
@@ -279,10 +385,10 @@ void build_program
 		&data_header, sizeof(data_header)
 	);
 	bytes_written = prepare_machine_code_section(
-		element_text_data, bytes_written, insts
+		element_text_data, bytes_written, text_section
 	);
 	bytes_written = write_data_section(
-		element_data_data, bytes_written, data_infos
+		element_data_data, bytes_written, data_section
 	);
 	bytes_written = add_binary_data(
 		element_empty_shdr, bytes_written,
@@ -290,11 +396,11 @@ void build_program
 	);
 	bytes_written = add_binary_data(
 		element_text_shdr, bytes_written,
-		&text_section, sizeof(text_section)
+		&text_shdr, sizeof(text_shdr)
 	);
 	bytes_written = add_binary_data(
 		element_data_shdr, bytes_written,
-		&data_section, sizeof(data_section)
+		&data_shdr, sizeof(data_shdr)
 	);
 	bytes_written = add_binary_data(
 		element_shstrtab_shdr, bytes_written,
@@ -310,19 +416,21 @@ void build_program
 	header->e_entry = CODE_BASE_ADDR+glbl_offsets[element_text_data];
 	
 	setup_text_sections(
-		scratch_space, glbl_offsets, CODE_BASE_ADDR, instructions_size(insts)
+		scratch_space, glbl_offsets,
+		CODE_BASE_ADDR, text_section
 	);
 	setup_data_sections(
-		scratch_space, glbl_offsets, DATA_BASE_ADDR, data_infos
+		scratch_space, glbl_offsets, DATA_BASE_ADDR, data_section
 	);
+
 	
-	Elf32_Shdr * shstrtab_shdr = (Elf32_Shdr *) (scratch_space+glbl_offsets[element_shstrtab_shdr]);
+	Elf32_Shdr * shstrtab_shdr =
+		(Elf32_Shdr *) (scratch_space+glbl_offsets[element_shstrtab_shdr]);
 	shstrtab_shdr->sh_size    = sizeof(section_names);
 	shstrtab_shdr->sh_offset  = glbl_offsets[element_shstrtab_data];
 	
-	assemble_code(
-		data_infos, insts,
-		(uint32_t *) (scratch_space+glbl_offsets[element_text_data])
+	armv7_text_section_write_at(
+		text_section, data_section, scratch_space+glbl_offsets[element_text_data]
 	);
 	
 	int fd = open("executable", O_WRONLY|O_CREAT|O_TRUNC, 00755);
@@ -333,13 +441,13 @@ void build_program
 }
 
 int main() {
-	struct instruction_representation converted[N_TEST_INSTS] = {0};
-	struct instructions frame_instructions = {
-		.n = 0,
-		.converted = converted
-	};
-	prepare_test_code_and_data(&frame_instructions, &test_data_section);
-	build_program(&frame_instructions, &test_data_section);
+	struct data_section * const data_section =
+		generate_data_section();
+	struct armv7_text_section * const text_section =
+		generate_armv7_text_section();
+	
+	prepare_test_code_and_data(data_section, text_section);
+	build_program(data_section, text_section);
 	for (enum program_elements element = element_elf_header;
 	     element < n_elements; element++) {
 		printf("%x\n", glbl_offsets[element]);

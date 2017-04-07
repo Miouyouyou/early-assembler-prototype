@@ -130,7 +130,7 @@ void test_generate_frame() {
 	uint32_t produced_code[9];
 	
 	assert(
-		frame_gen_machine_code(frame, section, data_section, produced_code) ==
+		armv7_frame_gen_machine_code(frame, section, data_section, produced_code) ==
 		sizeof(expected_code)
 	);
 	
@@ -288,7 +288,7 @@ void test_frame_addresses_retrieving() {
 
 	for (enum expected_code_test e = 0; e < n_expectations; e++) {
 		assert(
-			frame_gen_machine_code(
+			armv7_frame_gen_machine_code(
 				expected_generation[e].code_frame, text_section, data_section,
 				produced_code
 			) == expected_generation[e].code_size
@@ -309,7 +309,7 @@ void test_frame_addresses_retrieving() {
 	};
 	
 	assert(
-		frame_gen_machine_code(main_frame, text_section, data_section, produced_code) ==
+		armv7_frame_gen_machine_code(main_frame, text_section, data_section, produced_code) ==
 		sizeof(expected_new_main_frame_code)
 	);
 	
