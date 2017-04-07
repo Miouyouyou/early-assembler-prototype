@@ -2,7 +2,8 @@
 #define MYY_ARMV7_ARM_H 1
 
 #include <stdint.h>
-#include <data_section.h>
+#include <sections/data.h>
+#include <sections/text.h>
 
 enum arm_register {
 	r0, r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11, r12, r13, r14, r15,
@@ -18,6 +19,8 @@ enum known_instructions {
 	inst_b_address,
 	inst_bl_address,
 	inst_blx_address,
+	inst_blx_register,
+	inst_bx_register,
 	inst_mov_immediate,
 	inst_mov_register,
 	inst_movt_immediate,
@@ -30,7 +33,9 @@ enum known_instructions {
 	n_known_instructions
 };
 
-enum parameter_type {
+enum argument_type {
+	arg_invalid,
+	arg_condition,
 	arg_register,
 	arg_immediate,
 	arg_address,
@@ -38,22 +43,24 @@ enum parameter_type {
 	arg_data_symbol_address_top16,
 	arg_data_symbol_address_bottom16,
 	arg_data_symbol_size,
+	arg_frame_address,
+	arg_frame_address_pc_relative,
 };
 
 struct parameters {
-	enum parameter_type type;
+	enum argument_type type;
 	uint32_t restriction;
 };
 
 #define MAX_ARGS 3
 
 struct instruction_args_infos {
-	enum parameter_type type;
-	uint32_t value;
+	enum argument_type type;
+	int32_t value;
 };
 
 struct instruction_representation {
-	enum known_instructions id;
+	enum known_instructions mnemonic_id;
 	struct instruction_args_infos args[MAX_ARGS];
 };
 
@@ -63,13 +70,26 @@ struct instructions {
 };
 
 typedef unsigned int address;
+typedef int32_t relative_address;
 typedef int32_t immediate;
+
+struct armv7_text_frame {
+	struct text_frame_metadata metadata;
+	struct instruction_representation * instructions;
+};
+
+struct armv7_text_section {
+	uint32_t id;
+	uint32_t n_frames_refs;
+	uint32_t max_frames_refs;
+	struct armv7_text_frame ** frames_refs;
+};
 
 uint32_t op_add_immediate
 (enum arm_register dest, enum arm_register op1, immediate op2);
-uint32_t op_b_address(enum arm_conditions condition, address imm24);
-uint32_t op_bl_address(enum arm_conditions condition, address addr24);
-uint32_t op_blx_address(address addr24);
+uint32_t op_b_address(enum arm_conditions condition, relative_address imm24);
+uint32_t op_bl_address(enum arm_conditions condition, relative_address addr24);
+uint32_t op_blx_address(relative_address addr24);
 uint32_t op_blx_register
 (enum arm_conditions condition, enum arm_register addr_reg);
 uint32_t op_mov_immediate(enum arm_register dest, immediate value);
@@ -95,9 +115,50 @@ uint32_t instructions_size
 (struct instructions const * __restrict const instructions);
 
 uint32_t assemble_code
-(struct data_symbols const * __restrict const data_infos,
+(struct data_section const * __restrict const data_infos,
  struct instructions const * __restrict const instructions,
  uint32_t * result_code);
 
+struct armv7_text_frame * generate_armv7_text_frame
+(uint32_t (*id_generator)());
+
+struct armv7_add_instruction_status {
+	unsigned int added;
+	struct instruction_representation * address;
+};
+
+struct armv7_add_instruction_status frame_add_instruction
+(struct armv7_text_frame * __restrict const frame);
+
+void instruction_mnemonic_id
+(struct instruction_representation * const instruction,
+ enum known_instructions mnemonic_id);
+
+void instruction_arg
+(struct instruction_representation * const instruction,
+ unsigned int const index,
+ enum argument_type argument_type,
+ uint32_t const value);
+
+unsigned int frame_gen_machine_code
+(struct armv7_text_frame * __restrict const frame,
+ struct armv7_text_section * __restrict const section,
+ struct data_section const * __restrict const data_infos,
+ uint32_t * __restrict const result_code);
+
+
+struct armv7_text_section * generate_armv7_text_section();
+
+unsigned int armv7_text_section_add_frame
+(struct armv7_text_section * __restrict const text_section,
+ struct armv7_text_frame const * __restrict const frame);
+
+void armv7_frame_set_address
+(struct armv7_text_frame * __restrict const frame,
+ uint32_t const address);
+
+uint32_t text_section_frame_address
+(struct armv7_text_section const * __restrict const text_section,
+ unsigned int const frame_id);
 
 #endif

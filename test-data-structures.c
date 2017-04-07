@@ -1,4 +1,4 @@
-#include <data_section.h>
+#include <sections/data.h>
 #include <assert.h>
 
 #include <stdio.h>
@@ -7,7 +7,7 @@
 #define LOG(...) fprintf(stderr, __VA_ARGS__)
 
 void assert_data_copy
-(struct data_symbols const * __restrict const data_section,
+(struct data_section const * __restrict const data_section,
  struct data_symbol const * __restrict const metadata,
  uint8_t const * __restrict const compared_string,
  uint32_t const original_data_size
@@ -19,7 +19,7 @@ void assert_data_copy
 }
  
 void assert_symbol_infos
-(struct data_symbols const * __restrict const data_section,
+(struct data_section const * __restrict const data_section,
  uint32_t const id,
  uint32_t const expected_alignment,
  uint32_t const expected_data_size,
@@ -34,6 +34,7 @@ void assert_symbol_infos
 	
 	assert(symbol_metadata->align == expected_alignment);
 	assert(symbol_metadata->size  == expected_data_size);
+	// We'll need UTF-8 strings with size informations very soon !
 	assert(strcmp(symbol_metadata->name, expected_name) == 0);
 	assert_data_copy(
 		data_section, symbol_metadata, expected_data, expected_data_size
@@ -41,7 +42,7 @@ void assert_symbol_infos
 }
  
 void assert_symbol_data_with_id
-(struct data_symbols * __restrict const data_section,
+(struct data_section * __restrict const data_section,
  unsigned int id,
  uint8_t const * __restrict const data,
  uint32_t data_size,
@@ -61,7 +62,7 @@ void assert_symbol_data_with_id
 	
 }
 uint32_t assert_add_symbol
-(struct data_symbols * __restrict const data_section,
+(struct data_section * __restrict const data_section,
  uint8_t const * __restrict const data,
  uint32_t data_size,
  uint8_t const * __restrict const name)
@@ -69,9 +70,12 @@ uint32_t assert_add_symbol
 
 	uint32_t expected_count = data_section->stored + 1;
 	
-	uint32_t id = add_data_symbol(
+	struct data_section_symbol_added symbol = data_section_add(
 		data_section, 4, data_size, name, data
 	);
+	
+	assert(symbol.added);
+	uint32_t id = symbol.id;
 	
 	struct symbol_found const result =
 		get_data_symbol_infos(data_section, id);
@@ -89,7 +93,7 @@ uint32_t assert_add_symbol
 }
 
 void assert_symbol_still_there
-(struct data_symbols const * __restrict const data_section,
+(struct data_section const * __restrict const data_section,
  unsigned int const id)
 {
 	assert(get_data_symbol_infos(data_section, id).found);
@@ -97,7 +101,7 @@ void assert_symbol_still_there
 
 
 void assert_symbol_not_there
-(struct data_symbols const * __restrict const data_section,
+(struct data_section const * __restrict const data_section,
  unsigned int const id)
 {
 	assert(!get_data_symbol_infos(data_section, id).found);
@@ -111,7 +115,7 @@ void test_add_data() {
 	uint8_t test_string2_name[] = "fezfzej";
 
 	struct data_symbol symbols[10];
-	struct data_symbols data_section = {
+	struct data_section data_section = {
 		.symbols = symbols,
 		.stored = 0,
 		.base_address = 0x1000,
@@ -136,7 +140,7 @@ void test_add_data() {
 void test_delete_data() {
 
 	struct data_symbol symbols[10];
-	struct data_symbols data_section = {
+	struct data_section data_section = {
 		.symbols = symbols,
 		.stored = 0,
 		.base_address = 0x1000,
@@ -211,7 +215,7 @@ void test_delete_data() {
 
 void test_exchange_data() {
 	struct data_symbol symbols[10];
-	struct data_symbols data_section = {
+	struct data_section data_section = {
 		.symbols = symbols,
 		.stored = 0,
 		.base_address = 0x1000,
@@ -246,7 +250,7 @@ void test_exchange_data() {
 		&data_section, 2
 	).address;
 	
-	exchange_data_symbols(&data_section, 2, 0);
+	exchange_symbols_order(&data_section, 2, 0);
 	
 	uintptr_t id0_address_after = (uintptr_t) get_data_symbol_infos(
 		&data_section, 0
@@ -276,12 +280,13 @@ void test_exchange_data() {
 }
 
 void test_update_data_symbol() {
-		struct data_symbol symbols[10];
-	struct data_symbols data_section = {
+	struct data_symbol symbols[10];
+	struct data_section data_section = {
 		.symbols = symbols,
 		.stored = 0,
 		.base_address = 0x1000,
 		.next_id = 0,
+		.max_symbols_before_realloc = 10,
 	};
 	
 	uint8_t test_string[] = "UPDATE TEST UPDATE TEST";
@@ -330,6 +335,16 @@ void test_update_data_symbol() {
 	assert_symbol_infos(
 		&data_section, 1, 16, sizeof(new_test_string2),
 		new_test_string2_name, new_test_string2
+	);
+	
+	assert_symbol_infos(
+		&data_section, 0, 4, sizeof(test_string),
+		test_string_name, test_string
+	);
+	
+	assert_symbol_infos(
+		&data_section, 2, 4, sizeof(test_string3),
+		test_string3_name, test_string3
 	);
 	
 

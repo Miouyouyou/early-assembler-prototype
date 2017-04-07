@@ -1,6 +1,10 @@
 #include <armv7-arm.h>
-#include <data_section.h>
+#include <sections/data.h>
 #include <helpers/numeric.h>
+#include <helpers/memory.h>
+
+#include <stddef.h> // offsetof
+#include <string.h> // memcpy
 
 static uint32_t to_positive(immediate value) {
 	return ~value + 1;
@@ -25,32 +29,32 @@ static inline uint32_t clamp_reglist(uint32_t reglist)
 }
 
 static uint32_t branch_instruction
-(enum arm_conditions condition, address addr24,
+(enum arm_conditions condition, relative_address addr24,
  uint32_t fixed_part_bits)
 {
 	uint32_t cond       = clamp_condition(condition) << 28;
 	uint32_t fixed_part = (fixed_part_bits) << 24;
-	uint32_t imm24      = addr24 & 0xffffff;
+	uint32_t imm24      = (addr24 >> 2) & 0xffffff;
 	
 	return cond | fixed_part | imm24;
 }
 
 
-uint32_t op_b_address(enum arm_conditions condition, address addr24)
+uint32_t op_b_address(enum arm_conditions condition, relative_address addr24)
 {
 	return branch_instruction(condition, addr24, 0b1010);
 }
 
-uint32_t op_bl_address(enum arm_conditions condition, address addr24)
+uint32_t op_bl_address(enum arm_conditions condition, relative_address addr24)
 {
 	return branch_instruction(condition, addr24, 0b1011);
 }
 
-uint32_t op_blx_address(address addr24)
+uint32_t op_blx_address(relative_address addr24)
 {
 	uint32_t fixed_part = 0b1111101 << 25;
 	uint32_t h          = addr24 & 1 << 24;
-	uint32_t imm24      = ((addr24 >> 1) & 0xffffff);
+	uint32_t imm24      = ((addr24 >> 1) & 0xffffff) >> 1;
 
 	return fixed_part | h | imm24;
 }
@@ -60,6 +64,16 @@ uint32_t op_blx_register
 {
 	uint32_t cond       = clamp_condition(condition) << 28;
 	uint32_t fixed_part = 0b000100101111111111110011 << 4;
+	uint32_t rm         = clamp_standard_register(addr_reg);
+	
+	return cond | fixed_part | rm;
+}
+
+uint32_t op_bx_register
+(enum arm_conditions condition, enum arm_register addr_reg)
+{
+	uint32_t cond       = clamp_condition(condition) << 28;
+	uint32_t fixed_part = 0b000100101111111111110001 << 4;
 	uint32_t rm         = clamp_standard_register(addr_reg);
 	
 	return cond | fixed_part | rm;
@@ -196,15 +210,25 @@ uint32_t op_svc_immediate(immediate value)
 struct args_values { unsigned int val0, val1, val2; };
 
 struct args_values get_values
-(struct data_symbols const * __restrict const symbols,
- struct instruction_args_infos const * __restrict const args)
+(struct data_section const * __restrict const symbols,
+ struct armv7_text_section const * __restrict const text_section,
+ struct instruction_args_infos const * __restrict const args,
+ unsigned int const pc)
 {
 	
 	uint32_t values[MAX_ARGS];
 	for (unsigned int a = 0; a < MAX_ARGS; a++) {
 		uint32_t set_value = args[a].value;
 		switch(args[a].type) {
+			case arg_invalid:
+				values[a] = 0;
+				break;
+			case arg_condition:
+				values[a] = clamp_condition(set_value);
+				break;
 			case arg_register:
+				values[a] = clamp_standard_register(set_value);
+				break;
 			case arg_immediate:
 			case arg_address:
 				values[a] = set_value;
@@ -221,6 +245,16 @@ struct args_values get_values
 			case arg_data_symbol_size:
 				values[a] = data_size(symbols, set_value);
 				break;
+			case arg_frame_address:
+				values[a] = text_section_frame_address(text_section, set_value);
+				break;
+			case arg_frame_address_pc_relative: {
+					uint32_t address = 
+						text_section_frame_address(text_section, set_value);
+					// We currently only support ARM mode.
+					values[a] = address - pc - 4;
+				}
+				break;
 		}
 	}
 	
@@ -233,27 +267,13 @@ struct args_values get_values
 	return vals;
 }
 
-/*
- * enum known_instructions {
-	inst_add_immediate,
-	inst_b_address,
-	inst_bl_address,
-	inst_blx_address,
-	inst_mov_immediate,
-	inst_mov_register,
-	inst_mvn_immediate,
-	inst_pop_regmask,
-	inst_push_regmask,
-	inst_sub_immediate,
-	inst_svc_immediate,
-	n_known_instructions
-};*/
-
 uint32_t (*op_functions[n_known_instructions])() = {
 	[inst_add_immediate] = op_add_immediate,
 	[inst_b_address]     = op_b_address,
 	[inst_bl_address]    = op_bl_address,
 	[inst_blx_address]   = op_blx_address,
+	[inst_blx_register]  = op_blx_register,
+	[inst_bx_register]   = op_bx_register,
 	[inst_mov_immediate] = op_mov_immediate,
 	[inst_mov_register]  = op_mov_register,
 	[inst_movt_immediate] = op_movt_immediate,
@@ -266,7 +286,7 @@ uint32_t (*op_functions[n_known_instructions])() = {
 };
 
 uint32_t assemble_code
-(struct data_symbols const * __restrict const data_infos,
+(struct data_section const * __restrict const data_infos,
  struct instructions const * __restrict const instructions,
  uint32_t * result_code)
 {
@@ -275,8 +295,8 @@ uint32_t assemble_code
 		instructions->converted;
 	for (unsigned int i = 0; i < n_instructions; i++) {
 		struct args_values values = 
-			get_values(data_infos, internal_insts[i].args);
-		result_code[i] = op_functions[internal_insts[i].id](
+			get_values(data_infos, NULL, internal_insts[i].args, 0);
+		result_code[i] = op_functions[internal_insts[i].mnemonic_id](
 			values.val0, values.val1, values.val2
 		);
 	}
@@ -290,7 +310,7 @@ uint32_t add_instruction
 {
 	uint32_t new_index = instructions->n;
 	instructions->n++;
-	instructions->converted[new_index].id = id;
+	instructions->converted[new_index].mnemonic_id = id;
 	instructions->converted[new_index].args[0].value = val0;
 	instructions->converted[new_index].args[1].value = val1;
 	instructions->converted[new_index].args[2].value = val2;
@@ -301,4 +321,235 @@ uint32_t instructions_size
 (struct instructions const * __restrict const instructions)
 {
 	return instructions->n * 4;
+}
+
+struct armv7_text_frame * generate_armv7_text_frame
+(uint32_t (*id_generator)())
+{
+	struct armv7_text_frame * __restrict text_frame = NULL;
+
+	unsigned int const n_instructions_default = 128;
+	unsigned int const instructions_array_size =
+		n_instructions_default * sizeof(struct instruction_representation);
+	struct instruction_representation * instructions =
+		allocate_durable_memory(instructions_array_size);
+		
+	if (instructions == NULL) goto cant_allocate_instructions_array;
+	
+	struct armv7_text_frame const frame_data = {
+		.metadata = {
+			.id = id_generator(),
+			.base_address = 0,
+			.stored_instructions = 0,
+			.max_instructions = n_instructions_default
+		},
+		.instructions = instructions
+	};
+	
+	text_frame = allocate_durable_memory(sizeof(struct armv7_text_frame));
+	
+	if (text_frame != NULL) {
+		memcpy(text_frame, &frame_data, sizeof(struct armv7_text_frame));
+		memset(instructions, 0, instructions_array_size);
+	}
+	else free_durable_memory(instructions);
+
+cant_allocate_instructions_array:
+	return text_frame;
+}
+
+static unsigned int need_more_space_for_instructions_in
+(struct armv7_text_frame * __restrict const frame)
+{
+	return (frame->metadata.stored_instructions ==
+	        frame->metadata.max_instructions);
+}
+
+static unsigned int allocate_more_space_for_instructions_in
+(struct armv7_text_frame * __restrict const frame)
+{
+
+	unsigned int current_instructions_space =
+		frame->metadata.max_instructions *
+		sizeof(struct instruction_representation);
+	unsigned int new_instructions_space =
+		current_instructions_space * 2;
+	unsigned int delta = 
+		new_instructions_space - current_instructions_space;
+	
+	struct instruction_representation * __restrict const new_addr =
+		reallocate_durable_memory(
+			frame->instructions, new_instructions_space
+		);
+	
+	unsigned int allocated = (new_addr != NULL);
+	
+	if (allocated) {
+		memset(new_addr+current_instructions_space, 0, delta);
+		frame->instructions = new_addr;
+	}
+	
+	return allocated;
+}
+
+struct armv7_add_instruction_status frame_add_instruction
+(struct armv7_text_frame * __restrict const frame)
+{
+	struct armv7_add_instruction_status status = {
+		.added = 0,
+		.address = NULL
+	};
+
+	if (need_more_space_for_instructions_in(frame))
+		if (!allocate_more_space_for_instructions_in(frame))
+			goto no_more_space_for_instructions;
+
+	unsigned int new_index = frame->metadata.stored_instructions;
+	
+	struct instruction_representation * instruction_addr =
+		frame->instructions+new_index;
+	frame->metadata.stored_instructions += 1;
+
+	status.added = 1;
+	status.address = instruction_addr;
+
+no_more_space_for_instructions:
+	return status;
+}
+
+void instruction_mnemonic_id
+(struct instruction_representation * instruction,
+ enum known_instructions mnemonic_id)
+{
+	instruction->mnemonic_id = mnemonic_id;
+}
+
+void instruction_arg
+(struct instruction_representation * const instruction,
+ unsigned int const index,
+ enum argument_type argument_type,
+ uint32_t const value)
+{
+	instruction->args[index].type = argument_type;
+	instruction->args[index].value = value;
+}
+
+unsigned int frame_gen_machine_code
+(struct armv7_text_frame * __restrict const frame,
+ struct armv7_text_section * __restrict const section,
+ struct data_section const * __restrict const data_infos,
+ uint32_t * __restrict const result_code)
+{
+	unsigned int n_instructions = frame->metadata.stored_instructions;
+	struct instruction_representation * __restrict const instructions =
+		frame->instructions;
+
+	for (unsigned int i = 0, pc = frame->metadata.base_address;
+	     i < n_instructions;
+	     i++, pc += 4) {
+		struct args_values values = 
+			get_values(data_infos, section, instructions[i].args, pc);
+		result_code[i] = op_functions[instructions[i].mnemonic_id](
+			values.val0, values.val1, values.val2
+		);
+	}
+	return n_instructions * sizeof(uint32_t);
+}
+
+uint32_t text_section_frame_address
+(struct armv7_text_section const * __restrict const text_section,
+ unsigned int const frame_id)
+{
+	uint32_t address = 0;
+	
+	unsigned int n_frames = text_section->n_frames_refs;
+	struct armv7_text_frame const * const * __restrict const frames =
+		text_section->frames_refs;
+	
+	unsigned int f = 0;
+	while(frames[f]->metadata.id != frame_id && f < n_frames) f++;
+	
+	if (f < n_frames) address = frames[f]->metadata.base_address;
+	
+	return address;
+}
+
+static unsigned int expand_frame_space_of
+(struct armv7_text_section * __restrict const text_section)
+{
+	unsigned int current_refs_size = 
+		text_section->max_frames_refs * sizeof(struct armv7_text_frame *);
+	unsigned int new_refs_size = current_refs_size * 2;
+	
+	struct armv7_text_frame ** const new_refs_addr =
+		reallocate_durable_memory(text_section->frames_refs, new_refs_size);
+		
+	unsigned int expanded = (new_refs_addr != NULL);
+	
+	return expanded;
+}
+
+static unsigned int not_enough_frame_space_in
+(struct armv7_text_section * __restrict const text_section)
+{
+	return (text_section->n_frames_refs == text_section->max_frames_refs);
+}
+
+struct armv7_text_section * generate_armv7_text_section()
+{
+	struct armv7_text_section * text_section = NULL;
+	unsigned int const n_frames_refs_default = 512;
+	
+	unsigned int const frames_refs_size =
+		n_frames_refs_default * sizeof(struct armv7_text_frame *);
+	
+	
+	struct armv7_text_frame ** const frames_refs =
+		allocate_durable_memory(frames_refs_size);
+	
+	if (frames_refs == NULL) goto cant_allocate_frames_refs_space;
+	
+	struct armv7_text_section const section_infos = {
+		.id = 0,
+		.n_frames_refs = 0,
+		.max_frames_refs = n_frames_refs_default,
+		.frames_refs = frames_refs
+	};
+	
+	
+	text_section = 
+		allocate_durable_memory(sizeof(struct armv7_text_section));
+	
+	if (text_section == NULL) free_durable_memory(frames_refs);
+	else memcpy(
+		text_section, &section_infos, sizeof(struct armv7_text_section)
+	);
+	
+cant_allocate_frames_refs_space:
+	return text_section;
+}
+
+void armv7_frame_set_address
+(struct armv7_text_frame * __restrict const frame,
+ uint32_t const address)
+{
+	frame->metadata.base_address = address;
+}
+
+unsigned int armv7_text_section_add_frame
+(struct armv7_text_section * __restrict const text_section,
+ struct armv7_text_frame const * __restrict const frame)
+{
+	unsigned int added = 0;
+	if (not_enough_frame_space_in(text_section))
+		if (!expand_frame_space_of(text_section))
+			goto not_enough_memory_for_new_frame_reference;
+	
+	unsigned int new_index = text_section->n_frames_refs;
+	text_section->frames_refs[new_index] = frame;
+	text_section->n_frames_refs = new_index + 1;
+	added = 1;
+	
+not_enough_memory_for_new_frame_reference:
+	return added;
 }

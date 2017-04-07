@@ -1,7 +1,7 @@
 #include <stdint.h>
 #include <elf.h>
 #include <armv7-arm.h>
-#include <data_section.h>
+#include <sections/data.h>
 
 #include <string.h>
 
@@ -109,10 +109,11 @@ static uint8_t scratch_space[10000];
 uint32_t test_machine_code[50] = {0};
 uint8_t test_data[1000] = {0};
 static struct data_symbol test_symbols[10] = {0};
-static struct data_symbols test_data_section = {
+static struct data_section test_data_section = {
 	.symbols = test_symbols,
 	.stored = 0,
 	.base_address = 0x20000,
+	.max_symbols_before_realloc = 10
 };
 static uint8_t test_data_string[] = "My hamster is rich and can do kung-fu !\n";
 static uint8_t test_data_string_name[] = "meow";
@@ -131,15 +132,15 @@ uint32_t write_data
 
 void prepare_test_code_and_data
 (struct instructions * __restrict const insts,
- struct data_symbols * __restrict const data_section)
+ struct data_section * __restrict const data_section)
 {
 	struct instruction_representation * __restrict const converted =
 		insts->converted;
 	
-	uint32_t data_index = add_data_symbol(
+	uint32_t data_index = data_section_add(
 		data_section, 4, sizeof(test_data_string),
 		test_data_string_name, test_data_string
-	);
+	).id;
 	
 	add_instruction(insts, inst_mov_immediate, r0,  1, 0);
 	add_instruction(insts, inst_movw_immediate, r1, data_index, 0);
@@ -184,7 +185,7 @@ uint32_t prepare_machine_code_section
 uint32_t write_data_section
 (enum program_elements element,
  uint32_t storage_offset,
- struct data_symbols const * __restrict const data_section)
+ struct data_section const * __restrict const data_section)
 {
 	glbl_offsets[element] = storage_offset;
 	uint32_t bytes_written = write_data_section_content(
@@ -235,7 +236,7 @@ static void setup_data_sections
 (uint8_t * __restrict const elf_binary_data,
  offset const * __restrict const offsets,
  uint32_t const data_base_addr,
- struct data_symbols * __restrict const data_infos)
+ struct data_section * __restrict const data_infos)
 {
 	offset const physical_data_offset = offsets[element_data_data];
 	offset const virtual_data_offset =
@@ -260,7 +261,7 @@ static void setup_data_sections
 
 void build_program
 (struct instructions const * __restrict const insts,
- struct data_symbols * __restrict const data_infos)
+ struct data_section * __restrict const data_infos)
 {
 
 	memset(&empty_section, 0, sizeof(Elf32_Shdr));

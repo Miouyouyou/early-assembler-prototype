@@ -1,4 +1,4 @@
-#include <data_section.h>
+#include <sections/data.h>
 #include <armv7-arm.h>
 #include <stdint.h>
 
@@ -7,9 +7,65 @@
 #include <stdlib.h>
 
 #include <helpers/numeric.h>
+#include <helpers/memory.h>
+
+struct data_section * generate_data_section()
+{
+	uint32_t const default_n_symbols = 128;
+	
+	struct data_section * __restrict data_section = NULL;
+	
+	struct data_symbol * __restrict const symbols =
+		allocate_durable_memory(sizeof(struct data_symbol)*default_n_symbols);
+		
+	if (symbols == NULL) goto cant_allocate_data_section_symbols;
+	
+	struct data_section const section = {
+		.symbols = symbols,
+		.stored  = 0,
+		.next_id = 0,
+		.base_address = 0,
+		.max_symbols_before_realloc = default_n_symbols
+	};
+	
+	data_section = allocate_durable_memory(sizeof(struct data_section));
+	
+	if (data_section != NULL) *data_section = section;
+	else free_durable_memory(symbols);
+
+cant_allocate_data_section_symbols:
+	return data_section;
+}
+
+unsigned int expand_data_symbols_storage_in
+(struct data_section * __restrict const data_section)
+{
+	unsigned int current_symbols_max =
+		data_section->max_symbols_before_realloc;
+	unsigned int new_symbols_max = current_symbols_max * 2;
+	unsigned int delta = new_symbols_max - current_symbols_max;
+	unsigned int reallocated_memory =
+		new_symbols_max * sizeof(struct data_symbol);
+
+	struct data_symbol * __restrict const new_symbols_address =
+		reallocate_durable_memory(data_section->symbols, reallocated_memory);
+
+	unsigned int expanded = (new_symbols_address != NULL);
+	if (expanded) {
+		memset(
+			new_symbols_address+current_symbols_max, 0,
+			delta * sizeof(struct data_symbol)
+		);
+	
+		data_section->symbols = new_symbols_address;
+		data_section->max_symbols_before_realloc = new_symbols_max;
+	}
+	
+	return expanded;
+}
 
 struct uint32_result get_data_symbol_index
-(struct data_symbols const * __restrict const data_section,
+(struct data_section const * __restrict const data_section,
  uint32_t id)
 {
 	unsigned int const n_symbols = data_section->stored;
@@ -37,16 +93,27 @@ uint32_t data_address_upper16
 uint32_t data_address_lower16
 (data_address_func_sig)
 {
-	return data_address(data_section, data_id) & 0xffff;
+	uint32_t address = data_address(data_section, data_id) & 0xffff;
+	return address;
 }
 
-uint32_t add_data_symbol
-(struct data_symbols * __restrict const data_section,
+
+struct data_section_symbol_added data_section_add
+(struct data_section * __restrict const data_section,
  unsigned int const alignment,
  unsigned int const size,
  uint8_t const * __restrict const name,
  uint8_t const * __restrict const data)
 {
+	struct data_section_symbol_added add_status = {
+		.id = 0,
+		.added = 0
+	};
+	
+	if (data_section->stored == data_section->max_symbols_before_realloc)
+		if (!expand_data_symbols_storage_in(data_section))
+			goto no_more_memory_for_symbols;
+	
 	uint32_t const next_index = data_section->stored;
 	uint32_t const new_id = data_section->next_id;
 
@@ -58,12 +125,16 @@ uint32_t add_data_symbol
 
 	data_section->stored += 1;
 	data_section->next_id += 1;
-	
-	return new_id;
+
+	add_status.added = 1;
+	add_status.id = new_id;
+
+no_more_memory_for_symbols:
+	return add_status;
 }
 
 struct symbol_found get_data_symbol_infos
-(struct data_symbols const * __restrict const data_section,
+(struct data_section const * __restrict const data_section,
  uint32_t id)
 {
 
@@ -77,7 +148,7 @@ struct symbol_found get_data_symbol_infos
 }
 
 void update_data_symbol
-(struct data_symbols * __restrict const data_section,
+(struct data_section * __restrict const data_section,
  uint32_t const id,
  uint32_t const align,
  uint32_t const data_size,
@@ -97,7 +168,7 @@ void update_data_symbol
 }
 
 void delete_data_symbol
-(struct data_symbols * __restrict const data_section,
+(struct data_section * __restrict const data_section,
  uint32_t id)
 {
 	struct uint32_result const index =
@@ -135,8 +206,8 @@ id_not_found:
 	return;
 }
 
-void exchange_data_symbols
-(struct data_symbols * __restrict const data_section,
+void exchange_symbols_order
+(struct data_section * __restrict const data_section,
  unsigned int const id1, unsigned int const id2)
 {
 
@@ -164,7 +235,7 @@ nothing_to_do:
 }
 
 static uint32_t data_size_up_to
-(struct data_symbols const * __restrict const data_section,
+(struct data_section const * __restrict const data_section,
  uint32_t const symbol_index)
 {
 	uint32_t global_size = data_section->base_address;
@@ -207,14 +278,14 @@ uint32_t data_size
 }
 
 uint32_t data_section_size
-(struct data_symbols const * __restrict const data_section)
+(struct data_section const * __restrict const data_section)
 {
 	return data_size_up_to(data_section, data_section->stored);
 }
 
 
 uint32_t write_data_section_content
-(struct data_symbols const * __restrict const data_section,
+(struct data_section const * __restrict const data_section,
  uint8_t * __restrict const dest)
 {
 	unsigned int cursor = 0;
@@ -227,4 +298,11 @@ uint32_t write_data_section_content
 	}
 
 	return cursor;
+}
+
+void data_section_set_base_address
+(struct data_section * __restrict const data_section,
+ uint32_t const base_address)
+{
+	data_section->base_address = base_address;
 }

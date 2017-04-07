@@ -4,7 +4,7 @@
 #include <string.h> // memset
 
 #include <armv7-arm.h>
-#include <data_section.h>
+#include <sections/data.h>
 // Stub of a dumb mnemonics to machine code library
 
 
@@ -144,7 +144,7 @@ size_t instructions_to_string
 			instructions[i];
 		
 		struct instruction_to_string to_string_infos =
-			instructions_string_conversions[current_instruction.id];
+			instructions_string_conversions[current_instruction.mnemonic_id];
 
 		stored_chars += to_string_infos.tostring_func(
 			to_string_infos.format,
@@ -161,7 +161,7 @@ size_t instructions_to_string
 uint8_t test_data[1000] = {0};
 
 static struct data_symbol test_symbols[10] = {0};
-static struct data_symbols test_data_section = {
+static struct data_section test_data_section = {
 	.symbols = test_symbols,
 	.stored = 0,
 	.base_address = 0x20094,
