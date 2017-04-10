@@ -45,6 +45,7 @@ enum argument_type {
 	arg_data_symbol_size,
 	arg_frame_address,
 	arg_frame_address_pc_relative,
+	arg_regmask
 };
 
 struct parameters {

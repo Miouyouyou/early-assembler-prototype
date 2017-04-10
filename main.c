@@ -62,26 +62,6 @@ instruction_params[n_known_instructions] = {
  */
 
 
-
-char * register_names[] = {
-	[r0]  = "r0",
-	[r1]  = "r1",
-	[r2]  = "r2",
-	[r3]  = "r3",
-	[r4]  = "r4",
-	[r5]  = "r5",
-	[r6]  = "r6",
-	[r7]  = "r7",
-	[r8]  = "r8",
-	[r9]  = "r9",
-	[r10] = "r10",
-	[r11] = "r11",
-	[r12] = "ip",
-	[r13] = "sp",
-	[r14] = "lr",
-	[r15] = "pc"
-};
-
 #define tostring_func_sig char const * __restrict const format,\
  char * __restrict const string,\
  size_t const max_length,\

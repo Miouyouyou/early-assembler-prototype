@@ -6,6 +6,265 @@
 #include <stddef.h> // offsetof
 #include <string.h> // memcpy
 
+static struct instruction_representation
+instructions_defaults[n_known_instructions] = {
+	[inst_add_immediate] = {
+		.mnemonic_id = inst_add_immediate,
+		.args = {
+			[0] = {
+				.type = arg_register,
+				.value = r0
+			},
+			[1] = {
+				.type = arg_register,
+				.value = r0
+			},
+			[2] = {
+				.type = arg_immediate,
+				.value = 0
+			}
+		}
+	},
+	[inst_b_address] = {
+		.mnemonic_id = inst_b_address,
+		.args = {
+			[0] = {
+				.type = arg_condition,
+				.value = cond_al
+			},
+			[1] = {
+				.type = arg_frame_address_pc_relative,
+				.value = 0
+			},
+			[2] = {
+				.type = arg_invalid,
+				.value = 0
+			}
+		}
+	},
+	[inst_bl_address] = {
+		.mnemonic_id = inst_bl_address,
+		.args = {
+			[0] = {
+				.type = arg_condition,
+				.value = cond_al
+			},
+			[1] = {
+				.type = arg_frame_address_pc_relative,
+				.value = 0
+			},
+			[2] = {
+				.type = arg_invalid,
+				.value = 0
+			}
+		}
+	},
+	[inst_blx_address] = {
+		.mnemonic_id = inst_blx_address,
+		.args = {
+			[0] = {
+				.type = arg_condition,
+				.value = cond_al
+			},
+			[1] = {
+				.type = arg_frame_address_pc_relative,
+				.value = 0
+			},
+			[2] = {
+				.type = arg_invalid,
+				.value = 0
+			}
+		}
+	},
+	[inst_blx_register] = {
+		.mnemonic_id = inst_blx_register,
+		.args = {
+			[0] = {
+				.type = arg_condition,
+				.value = cond_al
+			},
+			[1] = {
+				.type = arg_register,
+				.value = reg_lr
+			},
+			[2] = {
+				.type = arg_invalid,
+				.value = 0
+			}
+		}
+	},
+	[inst_bx_register] = {
+		.mnemonic_id = inst_bx_register,
+		.args = {
+			[0] = {
+				.type = arg_condition,
+				.value = cond_al
+			},
+			[1] = {
+				.type = arg_register,
+				.value = reg_lr
+			},
+			[2] = {
+				.type = arg_invalid,
+				.value = 0
+			}
+		}
+	},
+	[inst_mov_immediate] = {
+		.mnemonic_id = inst_mov_immediate,
+		.args = {
+			[0] = {
+				.type = arg_register,
+				.value = r0
+			},
+			[1] = {
+				.type = arg_immediate,
+				.value = 0
+			},
+			[2] = {
+				.type = arg_invalid,
+				.value = 0
+			}
+		}
+	},
+	[inst_mov_register] = {
+		.mnemonic_id = inst_mov_register,
+		.args = {
+			[0] = {
+				.type = arg_register,
+				.value = r4
+			},
+			[1] = {
+				.type = arg_register,
+				.value = r0
+			},
+			[2] = {
+				.type = arg_invalid,
+				.value = 0
+			}
+		}
+	},
+	[inst_movt_immediate] = {
+		.mnemonic_id = inst_movt_immediate,
+		.args = {
+			[0] = {
+				.type = arg_register,
+				.value = r0
+			},
+			[1] = {
+				.type = arg_data_symbol_address_top16,
+				.value = 0
+			},
+			[2] = {
+				.type = arg_invalid,
+				.value = 0
+			}
+		}
+	},
+	[inst_movw_immediate] = {
+		.mnemonic_id = inst_movw_immediate,
+		.args = {
+			[0] = {
+				.type = arg_register,
+				.value = r0
+			},
+			[1] = {
+				.type = arg_data_symbol_address_bottom16,
+				.value = 0
+			},
+			[2] = {
+				.type = arg_invalid,
+				.value = 0
+			}
+		}
+	},
+	[inst_mvn_immediate] = {
+		.mnemonic_id = inst_mvn_immediate,
+		.args = {
+			[0] = {
+				.type = arg_register,
+				.value = r0
+			},
+			[1] = {
+				.type = arg_immediate,
+				.value = 1
+			},
+			[2] = {
+				.type = arg_invalid,
+				.value = 0
+			}
+		}
+	},
+	[inst_pop_regmask] = {
+		.mnemonic_id = inst_pop_regmask,
+		.args = {
+			[0] = {
+				.type = arg_regmask,
+				.value = 0b1000000011110000
+			},
+			[1] = {
+				.type = arg_invalid,
+				.value = 0
+			},
+			[2] = {
+				.type = arg_invalid,
+				.value = 0
+			}
+		}
+	},
+	[inst_push_regmask] = {
+		.mnemonic_id = inst_push_regmask,
+		.args = {
+			[0] = {
+				.type = arg_regmask,
+				.value = 0b0100000011110000
+			},
+			[1] = {
+				.type = arg_invalid,
+				.value = 0
+			},
+			[2] = {
+				.type = arg_invalid,
+				.value = 0
+			}
+		}
+	},
+	[inst_sub_immediate] = {
+		.mnemonic_id = inst_sub_immediate,
+		.args = {
+			[0] = {
+				.type = arg_register,
+				.value = r0,
+			},
+			[1] = {
+				.type = arg_register,
+				.value = r0,
+			},
+			[2] = {
+				.type = arg_immediate,
+				.value = 0
+			}
+		}
+	},
+	[inst_svc_immediate] = {
+		.mnemonic_id = inst_svc_immediate,
+		.args = {
+			[0] = {
+				.type = arg_immediate,
+				.value = 0,
+			},
+			[1] = {
+				.type = arg_invalid,
+				.value = 0
+			},
+			[2] = {
+				.type = arg_invalid,
+				.value = 0
+			}
+		}
+	}
+};
+
 static uint32_t to_positive(immediate value) {
 	return ~value + 1;
 }
@@ -255,6 +514,9 @@ struct args_values get_values
 					values[a] = address - pc - 8;
 				}
 				break;
+			case arg_regmask:
+				values[a] = set_value;
+				break;
 		}
 	}
 	
@@ -421,7 +683,9 @@ void instruction_mnemonic_id
 (struct instruction_representation * instruction,
  enum known_instructions mnemonic_id)
 {
-	instruction->mnemonic_id = mnemonic_id;
+	if (instruction->mnemonic_id != mnemonic_id)
+		*instruction = instructions_defaults[mnemonic_id];
+
 }
 
 void instruction_arg
@@ -587,7 +851,6 @@ void armv7_text_section_rebase_at
 	}
 }
 
-#include <stdio.h>
 void armv7_text_section_write_at
 (struct armv7_text_section const * __restrict const text_section,
  struct data_section const * __restrict const data_section,
@@ -600,7 +863,6 @@ void armv7_text_section_write_at
 		struct armv7_text_frame * __restrict const current_frame =
 			text_section->frames_refs[f];
 		uint32_t const frame_address = current_frame->metadata.base_address;
-		fprintf(stderr, "address : %x\n", frame_address);
 		output_cursor = frame_address - base_address;
 		armv7_frame_gen_machine_code(
 			current_frame, text_section,
