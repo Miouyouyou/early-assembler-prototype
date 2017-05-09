@@ -79,6 +79,12 @@ struct armv7_text_frame {
 	struct instruction_representation * instructions;
 };
 
+struct armv7_text_frames {
+	uint16_t count, max;
+	struct armv7_text_frame ** data;
+};
+
+
 struct armv7_text_section {
 	uint32_t id;
 	uint32_t n_frames_refs;

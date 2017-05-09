@@ -1,11 +1,17 @@
-#include <stdint.h>
+
+// Own headers
+#include <dumbelflib.h>
+
+// Standard libraries
 #include <elf.h>
-#include <armv7-arm.h>
-#include <sections/data.h>
-
+#include <stdint.h>
+#include <stdio.h>
 #include <string.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <unistd.h>
 
-#include <assert.h>
 
 #define INSTRUCTION_SIZE 9*4
 #define DATA_SIZE 16
@@ -99,21 +105,11 @@ Elf32_Shdr shstrtab_section = {
 	.sh_addralign = 1,
 };
 
+typedef uint32_t offset;
+
 static uint8_t scratch_space[10000];
-
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <fcntl.h>
-#include <unistd.h>
-#include <stdio.h>
-
-#define N_TEST_INSTS 10
-uint32_t test_machine_code[50] = {0};
-uint8_t test_data[1000] = {0};
-static struct data_symbol test_symbols[10] = {0};
-
-
 uint8_t section_names[] = { "\0.text\0.data\0.shstrtab\0" };
+offset glbl_offsets[n_elements] = {0};
 
 uint32_t write_data
 (uint8_t * __restrict const storage,
@@ -125,146 +121,7 @@ uint32_t write_data
 	return storage_offset + data_size;
 }
 
-// Checking if ID and Indices are clearly separated
-static uint32_t id = 10;
-static uint32_t unique_id() {
-	uint32_t returned_id = id;
-	id += 10;
-	return returned_id;
-}
-
-static void add_inst
-(struct armv7_text_frame * __restrict const frame,
- enum known_instructions mnemonic_id,
- enum argument_type arg_type1,
- int32_t arg1,
- enum argument_type arg_type2,
- int32_t arg2,
- enum argument_type arg_type3,
- int32_t arg3)
-{
-	struct armv7_add_instruction_status status =
-		frame_add_instruction(frame);
-	assert(status.added);
-	struct instruction_representation * const inst = status.address;
-	
-	instruction_mnemonic_id(inst, mnemonic_id);
-	instruction_arg(inst, 0, arg_type1, arg1);
-	instruction_arg(inst, 1, arg_type2, arg2);
-	instruction_arg(inst, 2, arg_type3, arg3);
-}
-
-uint8_t test_data_string[] =
-	"My hamster is rich and can do kung-fu !\n";
-uint8_t test_data_string_name[] = "meow";
-void prepare_test_code_and_data
-(struct data_section * __restrict const data_section,
- struct armv7_text_section * __restrict const text_section)
-{
-	
-	uint32_t hamster_id = data_section_add(
-		data_section, 4, sizeof(test_data_string),
-		test_data_string_name, test_data_string
-	).id;
-	
-	struct armv7_text_frame * const main_frame =
-		generate_armv7_text_frame(unique_id);
-	struct armv7_text_frame * const write_frame =
-		generate_armv7_text_frame(unique_id);
-	struct armv7_text_frame * const exit_frame =
-		generate_armv7_text_frame(unique_id);
-	
-	add_inst(
-		main_frame,
-		inst_bl_address,
-		arg_condition, cond_al,
-		arg_frame_address_pc_relative, write_frame->metadata.id,
-		arg_invalid, 0
-	);
-	
-	add_inst(
-		main_frame,
-		inst_b_address,
-		arg_condition, cond_al,
-		arg_frame_address_pc_relative, exit_frame->metadata.id,
-		arg_invalid, 0
-	);
-	
-	add_inst(
-		write_frame,
-		inst_mov_immediate, arg_register, r0, arg_immediate, 0, 0, 0
-	);
-	
-	add_inst(
-		write_frame,
-		inst_mov_immediate,
-		arg_register, r1,
-		arg_data_symbol_address_bottom16, hamster_id,
-		0, 0
-	);
-	
-	add_inst(
-		write_frame,
-		inst_movt_immediate,
-		arg_register, r1,
-		arg_data_symbol_address_top16, hamster_id,
-		0, 0
-	);
-	
-	add_inst(
-		write_frame,
-		inst_mov_immediate,
-		arg_register, r2,
-		arg_data_symbol_size, hamster_id,
-		0, 0
-	);
-	
-	add_inst(
-		write_frame,
-		inst_mov_immediate,
-		arg_register, r7,
-		arg_immediate, 4,
-		0, 0
-	);
-	
-	add_inst(write_frame, inst_svc_immediate, 0, 0, 0, 0, 0, 0);
-
-	add_inst(
-		write_frame,
-		inst_bx_register,
-		arg_condition, cond_al,
-		arg_register, reg_lr,
-		0, 0
-	);
-	
-	add_inst(
-		exit_frame,
-		inst_mov_immediate, arg_register, r0, arg_immediate, 0, 0, 0);
-	
-	add_inst(
-		exit_frame,
-		inst_mov_immediate,
-		arg_register, r7,
-		arg_immediate, 1,
-		0, 0
-	);
-	
-	add_inst(
-		exit_frame,
-		inst_svc_immediate, 0, 0, 0, 0, 0, 0
-	);
-	
-	armv7_text_section_add_frame(text_section, main_frame);
-	armv7_text_section_add_frame(text_section, write_frame);
-	armv7_text_section_add_frame(text_section, exit_frame);
-	
-}
-
-typedef uint32_t offset;
-
-offset glbl_offsets[n_elements] = {0};
-
-uint32_t add_binary_data
+static uint32_t add_binary_data
 (enum program_elements element,
  uint32_t storage_offset,
  void const * __restrict const data,
@@ -276,7 +133,7 @@ uint32_t add_binary_data
 	);
 }
 
-uint32_t prepare_machine_code_section
+static uint32_t prepare_machine_code_section
 (enum program_elements element,
  uint32_t storage_offset,
  struct armv7_text_section const * __restrict const text_section)
@@ -287,7 +144,7 @@ uint32_t prepare_machine_code_section
 	return storage_offset + bytes_written;
 }
 
-uint32_t write_data_section
+static uint32_t write_data_section
 (enum program_elements element,
  uint32_t storage_offset,
  struct data_section const * __restrict const data_section)
@@ -367,9 +224,10 @@ static void setup_data_sections
 	dsh->sh_size = data_size;
 }
 
-void build_program
+void dumbelflib_build_armv7_program
 (struct data_section * __restrict const data_section,
- struct armv7_text_section * __restrict const text_section)
+ struct armv7_text_section * __restrict const text_section,
+ char const * __restrict const filepath)
 {
 
 	memset(&empty_section, 0, sizeof(Elf32_Shdr));
@@ -436,24 +294,11 @@ void build_program
 		scratch_space+glbl_offsets[element_text_data]
 	);
 	
-	int fd = open("executable", O_WRONLY|O_CREAT|O_TRUNC, 00755);
+	int fd = open(filepath, O_WRONLY|O_CREAT|O_TRUNC, 00755);
 	if (fd != -1) {
 		write(fd, scratch_space, bytes_written);
 		close(fd);
 	}
 }
 
-int main() {
-	struct data_section * const data_section =
-		generate_data_section();
-	struct armv7_text_section * const text_section =
-		generate_armv7_text_section();
-	
-	prepare_test_code_and_data(data_section, text_section);
-	build_program(data_section, text_section);
-	for (enum program_elements element = element_elf_header;
-	     element < n_elements; element++) {
-		printf("%x\n", glbl_offsets[element]);
-	}
-	return 0;
-}
+
