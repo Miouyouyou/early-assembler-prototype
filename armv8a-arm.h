@@ -3,9 +3,21 @@
 
 #include <stdint.h>
 
+/* TRM : The Reference Manual */
+/* When TRM is cited, it takes the following form :
+ * ARM DDI 0487C.a | C1-145
+ * 
+ * Where:
+ * - "ARM DDI 0487C.a" is the reference manual ID.
+ *   If you search this ID on the Web, you'll find the PDF
+ *   pretty fast.
+ * - C1-145 is the page number,
+ *   as printed on the bottom right of the actual page.
+ */
+
 enum arm_register {
 	/* The r syntax is only used when either W or X can be used
-	 * indiscriminately
+	 * indiscriminately.
 	 */
 	r0   =  0,
 	r1   =  1,
@@ -39,6 +51,8 @@ enum arm_register {
 	r29  = 29,
 	r30  = 30,
 	reg_zr = 31,
+	/* The W syntax is used when only accessing
+	 * the lower 32-bits of a register */
 	w0   =  0,
 	w1   =  1,
 	w2   =  2,
@@ -71,6 +85,7 @@ enum arm_register {
 	w29  = 29,
 	w30  = 30,
 	w_zr = 31,
+	/* The standard syntax : Xn */
 	x0   =  0,
 	x1   =  1,
 	x2   =  2,
@@ -103,6 +118,9 @@ enum arm_register {
 	x29  = 29,
 	x30  = 30,
 	x_zr = 31,
+	/* The 128-bits vector units.
+	 * Not used ATM
+	 */
 	v0   =  0,
 	v1   =  1,
 	v2   =  2,
@@ -135,7 +153,18 @@ enum arm_register {
 	v29  = 29,
 	v30  = 30,
 	v31  = 31,
+	/* Special register names. */
+
+	/* lr is dubious, however there are times X30 or W30 is used
+	 * to store the return address.
+	 */
 	reg_lr = 30,
+	/* The Zero register and SP register share the same encodings.
+	 * The instruction interpret them differently depending on the
+	 * context
+	 * See :
+	 * ARM DDI 0487C.a | C1-145
+	 */
 	reg_sp = 31,
 	reg_wsp = 31,
 	reg_discard = 31,
@@ -144,6 +173,93 @@ enum arm_register {
 typedef enum arm_register arm_register_t;
 
 #define REGISTER_MASK 0b11111
+
+enum known_instructions {
+	inst_adc,
+	inst_adcs,
+	inst_add_extended_register,
+	inst_adds_extended_register,
+	inst_add_immediate,
+	inst_adds_immediate,
+	inst_add_shifted_register,
+	inst_adds_shifted_register,
+	inst_adr,
+	inst_adrp,
+	inst_and_immediate,
+	inst_ands_immediate,
+	inst_asr_register,
+	inst_b_cond,
+	inst_b,
+	inst_bl,
+	inst_br,
+	inst_blr,
+	inst_ret,
+	inst_cbnz,
+	inst_cbz,
+	inst_cmmn_immediate,
+	inst_cmmn_register,
+	inst_cmmp_immediate,
+	inst_cmmp_register,
+	inst_sdiv,
+	inst_udiv,
+	inst_lsl_register,
+	inst_lsr_register,
+	inst_ldr_register,
+	inst_ldrb_register,
+	inst_ldrh_register,
+	inst_str_register,
+	inst_strb_register,
+	inst_ldr_literal,
+	inst_ldr_immediate,
+	inst_ldrh_immediate,
+	inst_ldrb_immediate,
+	inst_str_immediate,
+	inst_strh_immediate,
+	inst_strb_immediate,
+	inst_ldr_unsigned_immediate,
+	inst_ldrh_unsigned_immediate,
+	inst_ldrb_unsigned_immediate,
+	inst_str_unsigned_immediate,
+	inst_strh_unsigned_immediate,
+	inst_strb_unsigned_immediate,
+	inst_stp,
+	inst_ldp,
+	inst_madd,
+	inst_mul,
+	inst_umaddl,
+	inst_umull,
+	inst_umulh,
+	inst_smaddl,
+	inst_smull,
+	inst_smulh,
+	inst_msub,
+	inst_mneg,
+	inst_umsubl,
+	inst_umnegl,
+	inst_smsubl,
+	inst_snegl,
+	inst_mov_register,
+	inst_mvn_shifted_register,
+	inst_movk,
+	inst_movn,
+	inst_movw,
+	inst_movz,
+	inst_neg,
+	inst_negs,
+	inst_ngc,
+	inst_ngcs,
+	inst_sub_extended_register,
+	inst_subs_extended_register,
+	inst_sub_immediate_register,
+	inst_subs_immediate_register,
+	inst_sub_shifted_register,
+	inst_subs_shifted_register,
+	inst_sbc,
+	inst_sbcs,
+	inst_svc,
+	n_known_instructions
+};
+
 
 /**
  * cf : Conditional flag
@@ -304,10 +420,11 @@ enum indexing_mode {
 typedef enum indexing_mode indexing_mode_t;
 
 enum mov_special_type {
-	mt_movn,
-	mt_movz,
-	mt_movw,
-	mt_movk,
+	mt_movn = 0b00,
+	mt_mov  = 0b01,
+	mt_movz = 0b10,
+	mt_movw = 0b10,
+	mt_movk = 0b11,
 };
 typedef enum mov_special_type mov_special_type_t;
 
@@ -812,14 +929,14 @@ instruction_encoding subs_extended_register(
 	arm_register_t const reg_result);
 
 
-instruction_encoding sub_immediate_register(
+instruction_encoding sub_immediate(
 	encoding_variant_t const variant,
 	arm_register_t const reg_op1,
 	immediate_t const immediate_op2_12bits,
 	immediate_t const left_shift_by_12,
 	arm_register_t const reg_result);
 
-instruction_encoding subs_immediate_register(
+instruction_encoding subs_immediate(
 	encoding_variant_t const variant,
 	arm_register_t const reg_op1,
 	immediate_t const immediate_op2_12bits,

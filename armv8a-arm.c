@@ -1,5 +1,17 @@
 #include "armv8a-arm.h"
 
+/* TRM : The Reference Manual */
+/* When TRM is cited, it takes the following form :
+ * ARM DDI 0487C.a | C1-145
+ * 
+ * Where:
+ * - "ARM DDI 0487C.a" is the reference manual ID.
+ *   If you search this ID on the Web, you'll find the PDF
+ *   pretty fast.
+ * - C1-145 is the page number,
+ *   as printed on the bottom right of the actual page.
+ */
+
 static instruction_encoding adc_all(
 	encoding_variant_t const variant,
 	arm_register_t const reg_op1,
@@ -136,7 +148,7 @@ static instruction_encoding add_immediate_all(
 		(setting_flag & 1)                        << 29;
 	uint_fast32_t const fixed =
 		(0b10001)                                 << 24;
-	/* ARM DDI 0487C.a C6-532
+	/* ARM DDI 0487C.a | C6-532
 	 * ADD (immediate)
 	 * LSL #0  when shift = 00
 	 * LSL #12 when shift = 01
@@ -1564,7 +1576,7 @@ instruction_encoding mov_register(
 	arm_register_t const reg_src,
 	arm_register_t const reg_dst)
 {
-	/* ARM DDI 0487C.a - C6-796
+	/* ARM DDI 0487C.a | C6-796
 	 * MOV (register)
 	 * 
 	 * [...]
@@ -1758,7 +1770,7 @@ instruction_encoding subs_extended_register(
 
 
 
-static instruction_encoding sub_immediate_register_all(
+static instruction_encoding sub_immediate_all(
 	encoding_variant_t const variant,
 	arm_register_t const reg_op1,
 	immediate_t const immediate_op2_12bits,
@@ -1787,14 +1799,14 @@ static instruction_encoding sub_immediate_register_all(
 		(sf | op | s | fixed | shift | imm12 | rn | rd);
 }
 
-instruction_encoding sub_immediate_register(
+instruction_encoding sub_immediate(
 	encoding_variant_t const variant,
 	arm_register_t const reg_op1,
 	immediate_t const immediate_op2_12bits,
 	immediate_t const left_shift_by_12,
 	arm_register_t const reg_result)
 {
-	return sub_immediate_register_all(
+	return sub_immediate_all(
 		variant,
 		reg_op1,
 		immediate_op2_12bits,
@@ -1803,14 +1815,14 @@ instruction_encoding sub_immediate_register(
 		set_flag_off);
 }
 
-instruction_encoding subs_immediate_register(
+instruction_encoding subs_immediate(
 	encoding_variant_t const variant,
 	arm_register_t const reg_op1,
 	immediate_t const immediate_op2_12bits,
 	immediate_t const left_shift_by_12,
 	arm_register_t const reg_result)
 {
-	return sub_immediate_register_all(
+	return sub_immediate_all(
 		variant,
 		reg_op1,
 		immediate_op2_12bits,
